@@ -324,6 +324,80 @@
     transition: width 0.08s linear;
   }
 
+  #rightHud {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  #damagePanel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px !important;
+  }
+  #damageCar {
+    position: relative;
+    width: 26px;
+    height: 40px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 5px;
+  }
+  .dmg-zone {
+    position: absolute;
+    background: transparent;
+    transition: background 0.2s ease;
+    border-radius: 2px;
+  }
+  #dmgFront { top: -3px; left: 3px; right: 3px; height: 6px; }
+  #dmgRear { bottom: -3px; left: 3px; right: 3px; height: 6px; }
+  #dmgLeft { left: -3px; top: 6px; bottom: 6px; width: 6px; }
+  #dmgRight { right: -3px; top: 6px; bottom: 6px; width: 6px; }
+  .dmg-zone.d1 { background: #fbbf24; }
+  .dmg-zone.d2 { background: #f97316; }
+  .dmg-zone.d3 { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  #damageCount { font-size: 12px; font-weight: 700; color: #eef2ff; }
+
+  #deadToast {
+    position: fixed;
+    top: 44%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(120, 10, 10, 0.85);
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 12px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    z-index: 12;
+    display: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  #deadToast small { font-weight: 400; font-size: 12px; opacity: 0.85; }
+
+  #minimapWrap {
+    position: fixed;
+    left: 50%;
+    bottom: 148px;
+    transform: translateX(-50%);
+    width: 108px;
+    height: 108px;
+    display: none;
+    border-radius: 50%;
+    border: 1px solid rgba(103, 232, 249, 0.6);
+    background: radial-gradient(circle, rgba(8,40,48,0.55), rgba(4,10,18,0.75));
+    box-shadow: 0 0 14px rgba(103, 232, 249, 0.45), inset 0 0 18px rgba(103, 232, 249, 0.25);
+    z-index: 10;
+    overflow: hidden;
+  }
+  #minimapCanvas { width: 100%; height: 100%; display: block; opacity: 0.92; }
+
+  @media (max-width: 480px) {
+    #minimapWrap { bottom: 116px; width: 86px; height: 86px; }
+  }
+
   #menuBtn {
     position: fixed;
     top: 14px;
@@ -543,15 +617,31 @@
 
 <div id="hud">
   <div id="lapPanel" class="panel">TUR <b id="lapValue">1</b><div id="carNameTag"></div></div>
-  <div id="speedPanel" class="panel">
-    <span id="speedValue">0</span><span id="speedUnit">km/s</span>
-    <div id="speedBar"><div id="speedBarFill"></div></div>
+  <div id="rightHud">
+    <div id="speedPanel" class="panel">
+      <span id="speedValue">0</span><span id="speedUnit">km/s</span>
+      <div id="speedBar"><div id="speedBarFill"></div></div>
+    </div>
+    <div id="damagePanel" class="panel">
+      <div id="damageCar">
+        <div id="dmgFront" class="dmg-zone"></div>
+        <div id="dmgRear" class="dmg-zone"></div>
+        <div id="dmgLeft" class="dmg-zone"></div>
+        <div id="dmgRight" class="dmg-zone"></div>
+      </div>
+      <div id="damageCount">0/5</div>
+    </div>
   </div>
 </div>
 
 <div id="menuBtn">☰ Menü</div>
 <div id="raceBoard" class="panel"></div>
 <div id="driftBadge">DRİFT!</div>
+<div id="deadToast">💥 Hasar aldın!<br><small>Yeniden başlıyorsun…</small></div>
+
+<div id="minimapWrap">
+  <canvas id="minimapCanvas"></canvas>
+</div>
 <div id="viewBtn">🎥<small id="viewBtnLabel">ÜSTTEN</small></div>
 
 <div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
@@ -753,6 +843,41 @@
       g.add(mirror);
     });
 
+    // ön ızgara (far arası kararma şeritleri)
+    var grilleMat = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 0.7 });
+    for (var gi = -1; gi <= 1; gi += 2) {
+      var slat = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.04), grilleMat);
+      slat.position.set(gi * W * 0.12, wheelBaseY + 0.2 * hs, L - 0.02);
+      g.add(slat);
+    }
+
+    // plaka
+    var plateMat = new THREE.MeshStandardMaterial({ color: 0xeceef0, roughness: 0.5 });
+    var frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.02), plateMat);
+    frontPlate.position.set(0, wheelBaseY + 0.12 * hs, L - 0.05);
+    g.add(frontPlate);
+    var rearPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.02), plateMat);
+    rearPlate.position.set(0, wheelBaseY + 0.16 * hs, -L + 0.05);
+    g.add(rearPlate);
+
+    // eşik/rocker paneli (kapı altı) ve kapı kolu
+    [-1, 1].forEach(function (side) {
+      var rocker = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, L * 1.05), trimMat);
+      rocker.position.set(side * (W / 2 + 0.01), wheelBaseY + 0.06, 0);
+      g.add(rocker);
+
+      var handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.14), trimMat);
+      handle.position.set(side * (W / 2 + 0.03), wheelBaseY + 0.55 * hs, L * 0.05);
+      g.add(handle);
+    });
+
+    // egzoz ucu
+    var exhaustMat = new THREE.MeshStandardMaterial({ color: 0xcfd3d6, metalness: 0.85, roughness: 0.25 });
+    var exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.18, 10), exhaustMat);
+    exhaust.rotation.x = Math.PI / 2;
+    exhaust.position.set(W * 0.28, wheelBaseY, -L - 0.02);
+    g.add(exhaust);
+
     if (preset.bodyType === "muscle") {
       var scoop = new THREE.Mesh(new THREE.BoxGeometry(W * 0.26, 0.06, 0.5), trimMat);
       scoop.position.set(0, wheelBaseY + 0.53 * hs, L * 0.5);
@@ -951,6 +1076,59 @@
   var CAR_RADIUS = 1.3;
   var WHEEL_RADIUS = 0.36;
 
+  var MINIMAP_LAYER = 1;
+  var minimapCanvasEl = document.getElementById("minimapCanvas");
+  var minimapWrapEl = document.getElementById("minimapWrap");
+  var minimapRenderer = new THREE.WebGLRenderer({ canvas: minimapCanvasEl, antialias: true, alpha: true });
+  minimapRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var minimapCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
+  minimapCamera.up.set(0, 0, -1);
+  minimapCamera.layers.enable(MINIMAP_LAYER);
+  var minimapMarkers = {};
+
+  function resizeMinimap() {
+    var s = minimapCanvasEl.clientWidth || 108;
+    minimapRenderer.setSize(s, s, false);
+  }
+  window.addEventListener("resize", resizeMinimap);
+
+  function setupMinimap(viewSize) {
+    minimapCamera.left = -viewSize; minimapCamera.right = viewSize;
+    minimapCamera.top = viewSize; minimapCamera.bottom = -viewSize;
+    minimapCamera.position.set(0, 200, 0);
+    minimapCamera.lookAt(0, 0, 0);
+    minimapCamera.updateProjectionMatrix();
+    resizeMinimap();
+
+    function makeMarker(color, size) {
+      var geo = new THREE.CircleGeometry(size, 12);
+      var mat = new THREE.MeshBasicMaterial({ color: color });
+      var m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      m.layers.set(MINIMAP_LAYER);
+      scene.add(m);
+      return m;
+    }
+    minimapMarkers = { player: makeMarker(0x4ade80, 10) };
+    minimapMarkers.bots = bots.map(function (b, i) {
+      return makeMarker(BOT_DEFS[i].color, 8);
+    });
+    minimapWrapEl.style.display = "block";
+  }
+
+  function updateMinimap() {
+    if (!minimapMarkers.player) return;
+    minimapMarkers.player.position.set(state.posX, 55, state.posZ);
+    bots.forEach(function (b, i) {
+      var mk = minimapMarkers.bots[i];
+      if (mk) mk.position.set(b.mesh.position.x, 50, b.mesh.position.z);
+    });
+    var savedFog = scene.fog;
+    scene.fog = null;
+    minimapRenderer.render(scene, minimapCamera);
+    scene.fog = savedFog;
+  }
+
   function buildRoadTexture() {
     var w = 128, h = 256;
     var c = document.createElement("canvas");
@@ -979,6 +1157,58 @@
     tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return tex;
+  }
+
+  function buildDamageTexture() {
+    var w = 48, h = 48;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    var grad = ctx.createRadialGradient(w / 2, h / 2, 1, w / 2, h / 2, w / 2);
+    grad.addColorStop(0, "rgba(30,18,14,0.9)");
+    grad.addColorStop(0.6, "rgba(45,25,18,0.6)");
+    grad.addColorStop(1, "rgba(45,25,18,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(10,6,4,0.7)";
+    ctx.lineWidth = 1.4;
+    for (var i = 0; i < 5; i++) {
+      ctx.beginPath();
+      var sx = w / 2 + (Math.random() - 0.5) * 10, sy = h / 2 + (Math.random() - 0.5) * 10;
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + (Math.random() - 0.5) * 22, sy + (Math.random() - 0.5) * 22);
+      ctx.stroke();
+    }
+    return new THREE.CanvasTexture(c);
+  }
+  var damageTexture = buildDamageTexture();
+
+  function attachDamageDecals(mesh, dims) {
+    var L = dims.len / 2, W = dims.wid, hs = dims.hgt, baseY = 0.36;
+    function mkDecal(w, h) {
+      var mat = new THREE.MeshBasicMaterial({ map: damageTexture, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+      return new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    }
+    var front = mkDecal(0.55, 0.32);
+    front.position.set(0, baseY + 0.24 * hs, L - 0.03);
+    mesh.add(front);
+
+    var rear = mkDecal(0.55, 0.32);
+    rear.position.set(0, baseY + 0.3 * hs, -L + 0.03);
+    rear.rotation.y = Math.PI;
+    mesh.add(rear);
+
+    var left = mkDecal(0.7, 0.3);
+    left.position.set(-(W / 2 + 0.02), baseY + 0.4 * hs, 0);
+    left.rotation.y = -Math.PI / 2;
+    mesh.add(left);
+
+    var right = mkDecal(0.7, 0.3);
+    right.position.set(W / 2 + 0.02, baseY + 0.4 * hs, 0);
+    right.rotation.y = Math.PI / 2;
+    mesh.add(right);
+
+    return { front: front, rear: rear, left: left, right: right };
   }
 
   function buildSkidTexture() {
@@ -1436,6 +1666,12 @@
   function updatePhysics(dt) {
     if (state.finished) return;
 
+    if (state.dead) {
+      state.deadTimer -= dt;
+      if (state.deadTimer <= 0) respawnPlayer();
+      return;
+    }
+
     var steerTarget = (state.steerLeft ? -1 : 0) + (state.steerRight ? 1 : 0);
     state.steerAngle += (steerTarget - state.steerAngle) * Math.min(1, STEER_RESPONSE * dt);
 
@@ -1454,7 +1690,7 @@
 
     if (Math.abs(state.speed) > 0.05) {
       var speedRatio = Math.min(1, Math.abs(state.speed) / car.maxSpeed);
-      var turnRate = -state.steerAngle * car.turnRate * (0.25 + 0.75 * speedRatio);
+      var turnRate = -state.steerAngle * car.turnRate * (0.25 + 0.75 * speedRatio) * Math.sign(state.speed);
       state.heading += turnRate * dt;
     }
 
@@ -1471,18 +1707,21 @@
     if (Math.abs(diff) <= maxDelta) state.velHeading = state.heading;
     else state.velHeading += Math.sign(diff) * maxDelta;
     state.drifting = Math.abs(diff) > 0.16 && state.speed > 4;
+    var slipping = Math.abs(diff) > 0.045 && Math.abs(state.speed) > 3;
 
-    if (state.drifting) {
+    if (slipping) {
       state.skidTimer -= dt;
       if (state.skidTimer <= 0) {
-        state.skidTimer = 0.045;
+        state.skidTimer = 0.04;
         var fwdX2 = Math.sin(state.heading), fwdZ2 = Math.cos(state.heading);
         var rightX2 = fwdZ2, rightZ2 = -fwdX2;
-        var rearOff = car.dims.len / 2 - 0.62;
-        var rearX = state.posX - fwdX2 * rearOff, rearZ = state.posZ - fwdZ2 * rearOff;
+        var axleOff = car.dims.len / 2 - 0.62;
         var halfW2 = car.dims.wid / 2;
-        spawnSkidMark(rearX + rightX2 * halfW2, rearZ + rightZ2 * halfW2, state.velHeading);
-        spawnSkidMark(rearX - rightX2 * halfW2, rearZ - rightZ2 * halfW2, state.velHeading);
+        [1, -1].forEach(function (axleSide) {
+          var ax = state.posX - fwdX2 * axleOff * axleSide, az = state.posZ - fwdZ2 * axleOff * axleSide;
+          spawnSkidMark(ax + rightX2 * halfW2, az + rightZ2 * halfW2, state.velHeading);
+          spawnSkidMark(ax - rightX2 * halfW2, az - rightZ2 * halfW2, state.velHeading);
+        });
       }
     } else {
       state.skidTimer = 0;
@@ -1494,6 +1733,7 @@
       state.speed *= 0.5;
       state.shakeTimer = 0.35;
       playImpactSound();
+      applyDamage(moveX, moveZ);
     }
     state.wasColliding = collided;
     if (state.shakeTimer > 0) state.shakeTimer = Math.max(0, state.shakeTimer - dt);
@@ -1816,6 +2056,86 @@
   }
 
   /* ===========================================================
+   *  HASAR SİSTEMİ
+   * =========================================================== */
+  var dmgFrontEl = document.getElementById("dmgFront");
+  var dmgRearEl = document.getElementById("dmgRear");
+  var dmgLeftEl = document.getElementById("dmgLeft");
+  var dmgRightEl = document.getElementById("dmgRight");
+  var damageCountEl = document.getElementById("damageCount");
+  var deadToastEl = document.getElementById("deadToast");
+  var DEATH_HITS = 5;
+
+  function applyDamage(mx, mz) {
+    if (!state || state.dead) return;
+    var fwdX = Math.sin(state.heading), fwdZ = Math.cos(state.heading);
+    var rightX = fwdZ, rightZ = -fwdX;
+    var len = Math.sqrt(mx * mx + mz * mz) || 1;
+    var fComp = (mx * fwdX + mz * fwdZ) / len;
+    var rComp = (mx * rightX + mz * rightZ) / len;
+    var zone = Math.abs(fComp) > Math.abs(rComp) ? (fComp > 0 ? "front" : "rear") : (rComp > 0 ? "right" : "left");
+
+    state.damage[zone] = Math.min(3, state.damage[zone] + 1);
+    state.totalHits += 1;
+    updateDamageVisual(zone);
+    updateDamageHud();
+
+    if (state.totalHits >= DEATH_HITS) triggerDeath();
+  }
+
+  function updateDamageVisual(zone) {
+    if (!playerCarMesh || !playerCarMesh.userData.damageDecals) return;
+    var decal = playerCarMesh.userData.damageDecals[zone];
+    if (decal) decal.material.opacity = Math.min(1, state.damage[zone] / 3) * 0.8;
+  }
+
+  function damageClass(v) { return v <= 0 ? "" : v === 1 ? "d1" : v === 2 ? "d2" : "d3"; }
+
+  function updateDamageHud() {
+    if (!state) return;
+    dmgFrontEl.className = "dmg-zone " + damageClass(state.damage.front);
+    dmgRearEl.className = "dmg-zone " + damageClass(state.damage.rear);
+    dmgLeftEl.className = "dmg-zone " + damageClass(state.damage.left);
+    dmgRightEl.className = "dmg-zone " + damageClass(state.damage.right);
+    damageCountEl.textContent = state.totalHits + "/" + DEATH_HITS;
+  }
+
+  function resetDamage() {
+    state.damage = { front: 0, rear: 0, left: 0, right: 0 };
+    state.totalHits = 0;
+    updateDamageHud();
+    if (playerCarMesh && playerCarMesh.userData.damageDecals) {
+      var decals = playerCarMesh.userData.damageDecals;
+      Object.keys(decals).forEach(function (k) { decals[k].material.opacity = 0; });
+    }
+  }
+
+  function triggerDeath() {
+    state.dead = true;
+    state.deadTimer = 1.0;
+    state.gas = false; state.brake = false; state.steerLeft = false; state.steerRight = false;
+    silenceEngine();
+    deadToastEl.style.display = "block";
+  }
+
+  function respawnPlayer() {
+    state.dead = false;
+    deadToastEl.style.display = "none";
+    resetDamage();
+    if (state.mapId === "loop") {
+      var frame = getTrackFrame(state.trackProgress);
+      state.posX = frame.x; state.posZ = frame.z;
+      state.heading = Math.atan2(frame.tx, frame.tz);
+    } else {
+      state.heading = Math.round(state.heading / (Math.PI / 2)) * (Math.PI / 2);
+    }
+    state.velHeading = state.heading;
+    state.speed = 0;
+    state.steerAngle = 0;
+    state.wasColliding = false;
+  }
+
+  /* ===========================================================
    *  GİRİŞ KONTROLLERİ
    * =========================================================== */
   function bindPedal(el, onDown, onUp) {
@@ -1926,6 +2246,7 @@
     scene.add(camera);
 
     playerCarMesh = buildCarMesh(car, selection.paint, selection.rim);
+    playerCarMesh.userData.damageDecals = attachDamageDecals(playerCarMesh, car.dims);
     scene.add(playerCarMesh);
 
     state = {
@@ -1936,11 +2257,14 @@
       lap: 1, trackProgress: 0, lastArcSample: 0, distance: 0,
       drifting: false, started: false, finished: false,
       shakeTimer: 0, wasColliding: false, skidTimer: 0,
+      damage: { front: 0, rear: 0, left: 0, right: 0 }, totalHits: 0,
+      dead: false, deadTimer: 0,
       mapId: selection.map,
     };
 
     initSkidPool(scene);
     buildBots(start);
+    setupMinimap(selection.map === "loop" ? 216 : 210);
     setViewMode(viewMode);
     viewBtnEl.style.display = "flex";
 
@@ -1995,6 +2319,8 @@
     driftBadgeEl.classList.remove("show");
     raceBoardEl.style.display = "none";
     finishOverlayEl.style.display = "none";
+    minimapWrapEl.style.display = "none";
+    deadToastEl.style.display = "none";
     resizePreview();
   }
 
@@ -2096,6 +2422,7 @@
         });
       }
       renderer.render(scene, camera);
+      updateMinimap();
     }
   }
   frame();
