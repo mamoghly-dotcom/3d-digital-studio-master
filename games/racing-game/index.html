@@ -132,6 +132,17 @@
     background: radial-gradient(circle at 35% 30%, #4ade80, #15803d);
   }
 
+  .pedal-btn.steer {
+    width: 84px;
+    height: 84px;
+    font-size: 26px;
+    background: radial-gradient(circle at 35% 30%, #64a8e8, #1e4d8f);
+  }
+
+  .pedal-btn.steer small {
+    font-size: 9px;
+  }
+
   .pedal-btn.active {
     transform: scale(0.92);
     filter: brightness(1.25);
@@ -161,11 +172,13 @@
   </div>
 </div>
 
-<div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>(Klavye: ↑ / W gaz, ↓ / S fren)</small></div>
+<div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile direksiyonu çevirin<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
 
 <div id="controls">
+  <div id="leftBtn" class="pedal-btn steer">◀<small>SOL</small></div>
   <div id="brakeBtn" class="pedal-btn">FREN<small>BRAKE</small></div>
   <div id="gasBtn" class="pedal-btn">GAZ<small>GAS</small></div>
+  <div id="rightBtn" class="pedal-btn steer">▶<small>SAĞ</small></div>
 </div>
 
 <div id="creditFooter">3D Digital Studio — Basit Yarış Prototipi</div>
@@ -290,6 +303,9 @@
     return { x: x, z: z, tx: tx, tz: tz };
   }
 
+  // başlangıç / bitiş çizgisinin konumu ve yönü (araba burada başlar)
+  var START = getTrackFrame(0);
+
   /* ---------------------------------------------------------
    *  YOL DOKUSU (asfalt + kesikli orta çizgi + kırmızı/beyaz bordür)
    * --------------------------------------------------------- */
@@ -386,17 +402,16 @@
    *  BAŞLANGIÇ / BİTİŞ KAPISI
    * --------------------------------------------------------- */
   (function buildStartGate() {
-    var start = getTrackFrame(0);
-    var nx = -start.tz, nz = start.tx;
+    var nx = -START.tz, nz = START.tx;
     var poleGeo = new THREE.CylinderGeometry(0.35, 0.35, 8, 8);
     var poleMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
 
     [1, -1].forEach(function (side) {
       var pole = new THREE.Mesh(poleGeo, poleMat);
       pole.position.set(
-        start.x + nx * (ROAD_HALF_WIDTH + 1) * side,
+        START.x + nx * (ROAD_HALF_WIDTH + 1) * side,
         4,
-        start.z + nz * (ROAD_HALF_WIDTH + 1) * side
+        START.z + nz * (ROAD_HALF_WIDTH + 1) * side
       );
       scene.add(pole);
     });
@@ -404,8 +419,8 @@
     var bannerGeo = new THREE.BoxGeometry(ROAD_HALF_WIDTH * 2 + 3, 1.4, 0.2);
     var bannerMat = new THREE.MeshStandardMaterial({ color: 0xf4c542 });
     var banner = new THREE.Mesh(bannerGeo, bannerMat);
-    banner.position.set(start.x, 7.6, start.z);
-    banner.lookAt(start.x + start.tx, 7.6, start.z + start.tz);
+    banner.position.set(START.x, 7.6, START.z);
+    banner.lookAt(START.x + START.tx, 7.6, START.z + START.tz);
     scene.add(banner);
   })();
 
@@ -485,11 +500,25 @@
   var FRICTION = 7;
   var SPEED_TO_KMH = 3.6;
 
+  var MAX_TURN_RATE = 1.8;   // tam direksiyonda, tam hızda dönüş hızı (rad/sn)
+  var STEER_RESPONSE = 5;    // direksiyonun hedef açıya yumuşak geçiş hızı
+  var FINISH_NEAR = 8;       // bitiş çizgisine bu mesafede tur sayılır
+  var FINISH_FAR = 30;       // tekrar sayılabilmesi için bu kadar uzaklaşmalı
+
+  var startHeading = Math.atan2(START.tx, START.tz);
+
   var state = {
     gas: false,
     brake: false,
+    steerLeft: false,
+    steerRight: false,
+    steerAngle: 0,
     speed: 0,
-    distance: 0,
+    heading: startHeading,
+    posX: START.x,
+    posZ: START.z,
+    lap: 1,
+    nearFinish: true,
     started: false,
   };
 
@@ -507,26 +536,43 @@
       state.speed -= BRAKE_DECEL * dt;
     }
     state.speed = Math.max(0, Math.min(MAX_SPEED, state.speed));
-    state.distance += state.speed * dt;
+
+    var steerTarget = (state.steerLeft ? -1 : 0) + (state.steerRight ? 1 : 0);
+    state.steerAngle += (steerTarget - state.steerAngle) * Math.min(1, STEER_RESPONSE * dt);
+
+    if (state.speed > 0.05) {
+      var speedRatio = Math.min(1, state.speed / MAX_SPEED);
+      var turnRate = state.steerAngle * MAX_TURN_RATE * (0.25 + 0.75 * speedRatio);
+      state.heading += turnRate * dt;
+    }
+
+    var fwdX = Math.sin(state.heading);
+    var fwdZ = Math.cos(state.heading);
+    state.posX += fwdX * state.speed * dt;
+    state.posZ += fwdZ * state.speed * dt;
+
+    var dxFinish = state.posX - START.x, dzFinish = state.posZ - START.z;
+    var finishDist = Math.sqrt(dxFinish * dxFinish + dzFinish * dzFinish);
+    if (finishDist < FINISH_NEAR && !state.nearFinish) {
+      state.lap += 1;
+      state.nearFinish = true;
+    } else if (finishDist > FINISH_FAR) {
+      state.nearFinish = false;
+    }
   }
 
-  var lastLap = 1;
-
   function updateCamera() {
-    var frame = getTrackFrame(state.distance);
-    camera.position.set(frame.x, CAM_HEIGHT, frame.z);
-    var lookX = frame.x + frame.tx * 10;
-    var lookZ = frame.z + frame.tz * 10;
+    var fwdX = Math.sin(state.heading);
+    var fwdZ = Math.cos(state.heading);
+    camera.position.set(state.posX, CAM_HEIGHT, state.posZ);
     camera.up.set(0, 1, 0);
-    camera.lookAt(lookX, CAM_HEIGHT, lookZ);
+    camera.lookAt(state.posX + fwdX * 10, CAM_HEIGHT, state.posZ + fwdZ * 10);
 
-    // hafif viraj yatışı (bank) hissi için yaklaşık eğrilik hesabı
-    var ahead = getTrackFrame(state.distance + 4);
-    var cross = frame.tx * ahead.tz - frame.tz * ahead.tx;
-    var bank = THREE.MathUtils.clamp(cross * 10, -0.18, 0.18);
+    // viraja girerken hafif yatış (bank) hissi
+    var bank = THREE.MathUtils.clamp(-state.steerAngle * 0.16, -0.16, 0.16);
     camera.rotateZ(bank);
 
-    wheel.rotation.z = -bank * 2.2;
+    wheel.rotation.z = -state.steerAngle * 0.85;
   }
 
   /* ---------------------------------------------------------
@@ -542,9 +588,7 @@
     speedValueEl.textContent = kmh;
     speedBarFillEl.style.width = Math.min(100, (state.speed / MAX_SPEED) * 100) + "%";
 
-    var lap = Math.floor(state.distance / TOTAL_LENGTH) + 1;
-    if (lap !== lastLap) lastLap = lap;
-    lapValueEl.textContent = lap;
+    lapValueEl.textContent = state.lap;
 
     if (!state.started && state.speed > 0.05) {
       state.started = true;
@@ -602,6 +646,8 @@
 
   var gasBtn = document.getElementById("gasBtn");
   var brakeBtn = document.getElementById("brakeBtn");
+  var leftBtn = document.getElementById("leftBtn");
+  var rightBtn = document.getElementById("rightBtn");
 
   bindPedal(gasBtn, function () {
     state.gas = true;
@@ -610,6 +656,8 @@
   }, function () { state.gas = false; });
 
   bindPedal(brakeBtn, function () { state.brake = true; }, function () { state.brake = false; });
+  bindPedal(leftBtn, function () { state.steerLeft = true; }, function () { state.steerLeft = false; });
+  bindPedal(rightBtn, function () { state.steerRight = true; }, function () { state.steerRight = false; });
 
   window.addEventListener("keydown", function (e) {
     if (e.repeat) return;
@@ -623,6 +671,14 @@
       state.brake = true;
       brakeBtn.classList.add("active");
       e.preventDefault();
+    } else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      state.steerLeft = true;
+      leftBtn.classList.add("active");
+      e.preventDefault();
+    } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      state.steerRight = true;
+      rightBtn.classList.add("active");
+      e.preventDefault();
     }
   });
   window.addEventListener("keyup", function (e) {
@@ -632,6 +688,12 @@
     } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
       state.brake = false;
       brakeBtn.classList.remove("active");
+    } else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+      state.steerLeft = false;
+      leftBtn.classList.remove("active");
+    } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+      state.steerRight = false;
+      rightBtn.classList.remove("active");
     }
   });
 
