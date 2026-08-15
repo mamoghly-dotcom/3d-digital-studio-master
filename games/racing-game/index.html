@@ -542,7 +542,7 @@
 
     if (state.speed > 0.05) {
       var speedRatio = Math.min(1, state.speed / MAX_SPEED);
-      var turnRate = state.steerAngle * MAX_TURN_RATE * (0.25 + 0.75 * speedRatio);
+      var turnRate = -state.steerAngle * MAX_TURN_RATE * (0.25 + 0.75 * speedRatio);
       state.heading += turnRate * dt;
     }
 
@@ -569,7 +569,7 @@
     camera.lookAt(state.posX + fwdX * 10, CAM_HEIGHT, state.posZ + fwdZ * 10);
 
     // viraja girerken hafif yatış (bank) hissi
-    var bank = THREE.MathUtils.clamp(-state.steerAngle * 0.16, -0.16, 0.16);
+    var bank = THREE.MathUtils.clamp(state.steerAngle * 0.16, -0.16, 0.16);
     camera.rotateZ(bank);
 
     wheel.rotation.z = -state.steerAngle * 0.85;
