@@ -33,7 +33,7 @@
     position: fixed;
     inset: 0;
     z-index: 30;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     padding: 20px;
@@ -60,6 +60,113 @@
 
   #menuCard::-webkit-scrollbar { width: 6px; }
   #menuCard::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+  #menuBackBtn, #settingsBackBtn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #eef2ff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+
+  /* ---------------- ANA MENÜ ---------------- */
+  #titleScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(96,165,250,0.18), transparent 55%),
+      radial-gradient(circle at 85% 80%, rgba(74,222,128,0.14), transparent 55%),
+      #0b1220;
+  }
+  #titleCard {
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+    color: #eef2ff;
+  }
+  #titleEmoji { font-size: 64px; line-height: 1; margin-bottom: 6px; }
+  #titleName { font-size: 32px; font-weight: 800; margin: 0 0 6px; letter-spacing: 0.3px; }
+  #titleSubtitle { font-size: 13px; color: #9fb0d0; margin: 0 0 30px; }
+  #playBtn, #settingsBtn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+  }
+  #playBtn {
+    color: #06210f;
+    background: linear-gradient(180deg, #4ade80, #16a34a);
+    box-shadow: 0 10px 24px rgba(34,197,94,0.35);
+  }
+  #settingsBtn {
+    color: #eef2ff;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
+  /* ---------------- AYARLAR ---------------- */
+  #settingsScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 31;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    background: #0b1220;
+  }
+  #settingsCard {
+    width: 100%;
+    max-width: 340px;
+    background: linear-gradient(180deg, #161f30, #0f1626);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 20px;
+    box-sizing: border-box;
+    color: #eef2ff;
+  }
+  #settingsTitle { margin: 0 0 16px; font-size: 20px; }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 4px;
+    font-size: 15px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .toggle-btn {
+    padding: 8px 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(74,222,128,0.18);
+    color: #4ade80;
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+  }
+  .toggle-btn.off {
+    background: rgba(255,255,255,0.08);
+    color: #8fa0c4;
+    border-color: rgba(255,255,255,0.15);
+  }
 
   #menuTitle {
     font-size: 26px;
@@ -462,9 +569,33 @@
 
 <div id="creditFooter">3D Digital Studio — Yarış Prototipi</div>
 
-<!-- ---------------- MENÜ ---------------- -->
+<!-- ---------------- ANA MENÜ ---------------- -->
+<div id="titleScreen">
+  <div id="titleCard">
+    <div id="titleEmoji">🏎️</div>
+    <h1 id="titleName">Hız Pisti</h1>
+    <p id="titleSubtitle">Sürücü koltuğundan basit 3D yarış</p>
+    <button id="playBtn">OYNA 🏁</button>
+    <button id="settingsBtn">AYARLAR ⚙️</button>
+  </div>
+</div>
+
+<!-- ---------------- AYARLAR ---------------- -->
+<div id="settingsScreen">
+  <div id="settingsCard">
+    <h2 id="settingsTitle">⚙️ Ayarlar</h2>
+    <div class="settings-row">
+      <span>Ses</span>
+      <button id="soundToggleBtn" class="toggle-btn">AÇIK</button>
+    </div>
+    <button id="settingsBackBtn">← Geri</button>
+  </div>
+</div>
+
+<!-- ---------------- ARAÇ / PİST MENÜSÜ ---------------- -->
 <div id="menu">
   <div id="menuCard">
+    <button id="menuBackBtn">← Geri</button>
     <h1 id="menuTitle">🏎️ Hız Pisti</h1>
     <p id="menuSubtitle">Aracını seç, boya &amp; jant rengini ayarla, pisti seç ve sür.</p>
 
@@ -1145,7 +1276,7 @@
   var REVERSE_MAX_RATIO = 0.35;
   var CAM_HEIGHT = 1.35;
 
-  var state = null, car = null, mode = "menu", bots = null, playerCarMesh = null, viewMode = "cockpit";
+  var state = null, car = null, mode = "title", bots = null, playerCarMesh = null, viewMode = "cockpit";
   var clock = new THREE.Clock();
 
   function normAngle(a) {
@@ -1395,33 +1526,72 @@
    *  BASİT MOTOR SESİ
    * =========================================================== */
   var audioCtx = null, engineOsc = null, engineGain = null;
+  var engineSubOsc = null, engineFilter = null, engineLfo = null, engineLfoGain = null;
   function ensureEngineSound() {
     if (audioCtx) return;
     try {
       var Ctx = window.AudioContext || window.webkitAudioContext;
       audioCtx = new Ctx();
+
+      // ana motor tonu (satürasyonlu testere dalgası)
       engineOsc = audioCtx.createOscillator();
-      engineGain = audioCtx.createGain();
       engineOsc.type = "sawtooth";
-      engineOsc.frequency.value = 60;
+      engineOsc.frequency.value = 45;
+
+      // alt oktav (V-motor gürlemesi için kalınlık katar)
+      engineSubOsc = audioCtx.createOscillator();
+      engineSubOsc.type = "triangle";
+      engineSubOsc.frequency.value = 22.5;
+
+      // alçak geçiren filtre: devir arttıkça daha "açık"/parlak ses
+      engineFilter = audioCtx.createBiquadFilter();
+      engineFilter.type = "lowpass";
+      engineFilter.Q.value = 0.7;
+      engineFilter.frequency.value = 350;
+
+      // hafif titreşim (rölanti pürüzü) için yavaş LFO
+      engineLfo = audioCtx.createOscillator();
+      engineLfo.type = "sine";
+      engineLfo.frequency.value = 7;
+      engineLfoGain = audioCtx.createGain();
+      engineLfoGain.gain.value = 4;
+      engineLfo.connect(engineLfoGain);
+      engineLfoGain.connect(engineOsc.frequency);
+
+      var subGain = audioCtx.createGain();
+      subGain.gain.value = 0.6;
+
+      engineGain = audioCtx.createGain();
       engineGain.gain.value = 0.0;
-      engineOsc.connect(engineGain);
+
+      engineOsc.connect(engineFilter);
+      engineSubOsc.connect(subGain);
+      subGain.connect(engineFilter);
+      engineFilter.connect(engineGain);
       engineGain.connect(audioCtx.destination);
+
       engineOsc.start();
+      engineSubOsc.start();
+      engineLfo.start();
     } catch (e) { /* ses desteklenmiyorsa sessizce yok say */ }
   }
   function updateEngineSound() {
     if (!audioCtx || !engineOsc) return;
-    var ratio = state.speed / car.maxSpeed;
-    engineOsc.frequency.setTargetAtTime(60 + ratio * 260, audioCtx.currentTime, 0.05);
-    engineGain.gain.setTargetAtTime(0.015 + ratio * 0.05, audioCtx.currentTime, 0.05);
+    var ratio = Math.min(1, Math.abs(state.speed) / car.maxSpeed);
+    var t = audioCtx.currentTime;
+    var freq = 42 + ratio * 210;
+    engineOsc.frequency.setTargetAtTime(freq, t, 0.06);
+    engineSubOsc.frequency.setTargetAtTime(freq / 2, t, 0.06);
+    engineFilter.frequency.setTargetAtTime(280 + ratio * 3200, t, 0.08);
+    var targetGain = soundEnabled ? 0.02 + ratio * 0.07 : 0;
+    engineGain.gain.setTargetAtTime(targetGain, t, 0.05);
   }
   function silenceEngine() {
     if (engineGain) engineGain.gain.value = 0;
   }
 
   function playImpactSound() {
-    if (!audioCtx) return;
+    if (!audioCtx || !soundEnabled) return;
     try {
       var t = audioCtx.currentTime;
       var osc = audioCtx.createOscillator();
@@ -1620,6 +1790,57 @@
     resizePreview();
   }
 
+  /* ===========================================================
+   *  ANA MENÜ / AYARLAR EKRANLARI
+   * =========================================================== */
+  var titleScreenEl = document.getElementById("titleScreen");
+  var settingsScreenEl = document.getElementById("settingsScreen");
+  var soundToggleBtnEl = document.getElementById("soundToggleBtn");
+
+  var soundEnabled = true;
+  try {
+    var savedSound = localStorage.getItem("hizpisti_sound");
+    if (savedSound !== null) soundEnabled = savedSound === "1";
+  } catch (e) { /* localStorage yoksa varsayılan açık kalır */ }
+
+  function applySoundBtnUi() {
+    soundToggleBtnEl.textContent = soundEnabled ? "AÇIK" : "KAPALI";
+    soundToggleBtnEl.classList.toggle("off", !soundEnabled);
+  }
+  applySoundBtnUi();
+
+  soundToggleBtnEl.addEventListener("click", function () {
+    soundEnabled = !soundEnabled;
+    applySoundBtnUi();
+    try { localStorage.setItem("hizpisti_sound", soundEnabled ? "1" : "0"); } catch (e) {}
+    if (!soundEnabled) silenceEngine();
+  });
+
+  function showTitle() {
+    mode = "title";
+    titleScreenEl.style.display = "flex";
+    menuEl.style.display = "none";
+    settingsScreenEl.style.display = "none";
+  }
+  function showCarSelect() {
+    mode = "menu";
+    menuEl.style.display = "flex";
+    titleScreenEl.style.display = "none";
+    settingsScreenEl.style.display = "none";
+    resizePreview();
+  }
+  function showSettings() {
+    mode = "settings";
+    settingsScreenEl.style.display = "flex";
+    titleScreenEl.style.display = "none";
+    menuEl.style.display = "none";
+  }
+
+  document.getElementById("playBtn").addEventListener("click", showCarSelect);
+  document.getElementById("settingsBtn").addEventListener("click", showSettings);
+  document.getElementById("menuBackBtn").addEventListener("click", showTitle);
+  document.getElementById("settingsBackBtn").addEventListener("click", showTitle);
+
   var viewBtnEl = document.getElementById("viewBtn");
   var viewBtnLabelEl = document.getElementById("viewBtnLabel");
 
@@ -1656,7 +1877,7 @@
         });
       }
       previewRenderer.render(previewScene, previewCamera);
-    } else {
+    } else if (mode === "playing") {
       updatePhysics(dt);
       updateCamera();
       updateHud();
