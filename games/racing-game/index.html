@@ -793,27 +793,32 @@
     [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(function (p) {
       var wx = p[0] * offX, wz = p[1] * offZ;
 
-      // her tekerlek kendi grubunda: direksiyon dönüşü (Y) grubu, yuvarlanma (X) içindeki parçaları döndürür
-      var wheelGroup = new THREE.Group();
-      wheelGroup.position.set(wx, wheelBaseY, wz);
-      wheelGroup.userData.isWheel = true;
-      g.add(wheelGroup);
+      // dış grup (pivot) SADECE direksiyon dönüşünü (Y) taşır; iç grup (assembly) SADECE
+      // yuvarlanmayı (X) taşır. İkisini aynı objede karıştırmak Euler ekseninin kayıp
+      // tekerleğin "savrulmuş" görünmesine yol açıyordu.
+      var pivot = new THREE.Group();
+      pivot.position.set(wx, wheelBaseY, wz);
+      g.add(pivot);
+
+      var assembly = new THREE.Group();
+      assembly.userData.isWheel = true;
+      pivot.add(assembly);
 
       var wheel = new THREE.Mesh(wheelGeo, tireMat);
       wheel.rotation.z = Math.PI / 2;
-      wheelGroup.add(wheel);
+      assembly.add(wheel);
 
       var hub = new THREE.Mesh(hubGeo, hubMat);
       hub.rotation.z = Math.PI / 2;
-      wheelGroup.add(hub);
+      assembly.add(hub);
 
       for (var s = 0; s < 5; s++) {
         var spoke = new THREE.Mesh(spokeGeo, hubMat);
         spoke.rotation.x = (s / 5) * Math.PI * 2;
-        wheelGroup.add(spoke);
+        assembly.add(spoke);
       }
 
-      if (p[1] === 1) frontWheelGroups.push(wheelGroup);
+      if (p[1] === 1) frontWheelGroups.push(pivot);
     });
     g.userData.frontWheelGroups = frontWheelGroups;
 
@@ -944,6 +949,7 @@
 
   var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame, getNearestProgress, getTrackLateralDist, LOOP_HALF_WIDTH, CITY_LINES;
   var CAR_RADIUS = 1.3;
+  var WHEEL_RADIUS = 0.36;
 
   function buildRoadTexture() {
     var w = 128, h = 256;
@@ -973,6 +979,49 @@
     tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return tex;
+  }
+
+  function buildSkidTexture() {
+    var w = 64, h = 64;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    var grad = ctx.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2);
+    grad.addColorStop(0, "rgba(15,15,15,0.8)");
+    grad.addColorStop(0.7, "rgba(15,15,15,0.45)");
+    grad.addColorStop(1, "rgba(15,15,15,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    return new THREE.CanvasTexture(c);
+  }
+
+  var SKID_POOL_SIZE = 100;
+  var skidTexture = buildSkidTexture();
+  var skidMarks = [], skidIndex = 0;
+
+  function initSkidPool(rootGroup) {
+    skidMarks = [];
+    skidIndex = 0;
+    var geo = new THREE.PlaneGeometry(0.5, 1.5);
+    for (var i = 0; i < SKID_POOL_SIZE; i++) {
+      var mat = new THREE.MeshBasicMaterial({ map: skidTexture, transparent: true, opacity: 0.6, depthWrite: false });
+      var plane = new THREE.Mesh(geo, mat);
+      plane.rotation.x = -Math.PI / 2;
+      var pivot = new THREE.Group();
+      pivot.add(plane);
+      pivot.visible = false;
+      rootGroup.add(pivot);
+      skidMarks.push(pivot);
+    }
+  }
+
+  function spawnSkidMark(x, z, yaw) {
+    if (skidMarks.length === 0) return;
+    var m = skidMarks[skidIndex];
+    skidIndex = (skidIndex + 1) % skidMarks.length;
+    m.position.set(x, 0.07, z);
+    m.rotation.y = yaw;
+    m.visible = true;
   }
 
   function buildBarrierTexture() {
@@ -1344,6 +1393,7 @@
   var SPEED_TO_KMH = 3.6;
   var STEER_RESPONSE = 5;
   var HANDBRAKE_GRIP_MULT = 0.12;
+  var NATURAL_DRIFT_GRIP_MULT = 0.4;
   var FINISH_LAPS = 2;
   var REVERSE_ACCEL = 12;
   var REVERSE_MAX_RATIO = 0.35;
@@ -1408,12 +1458,35 @@
       state.heading += turnRate * dt;
     }
 
-    var grip = handbrake ? car.grip * HANDBRAKE_GRIP_MULT : car.grip;
+    // yeterli hızda sert viraja girersek el freni olmasa da doğal olarak kayabiliriz
+    var speedRatioAbs = Math.min(1, Math.abs(state.speed) / car.maxSpeed);
+    var highSpeedCorner = !handbrake && speedRatioAbs > 0.55 && Math.abs(state.steerAngle) > 0.55;
+
+    var grip = car.grip;
+    if (handbrake) grip = car.grip * HANDBRAKE_GRIP_MULT;
+    else if (highSpeedCorner) grip = car.grip * NATURAL_DRIFT_GRIP_MULT;
+
     var diff = normAngle(state.heading - state.velHeading);
     var maxDelta = grip * dt;
     if (Math.abs(diff) <= maxDelta) state.velHeading = state.heading;
     else state.velHeading += Math.sign(diff) * maxDelta;
     state.drifting = Math.abs(diff) > 0.16 && state.speed > 4;
+
+    if (state.drifting) {
+      state.skidTimer -= dt;
+      if (state.skidTimer <= 0) {
+        state.skidTimer = 0.045;
+        var fwdX2 = Math.sin(state.heading), fwdZ2 = Math.cos(state.heading);
+        var rightX2 = fwdZ2, rightZ2 = -fwdX2;
+        var rearOff = car.dims.len / 2 - 0.62;
+        var rearX = state.posX - fwdX2 * rearOff, rearZ = state.posZ - fwdZ2 * rearOff;
+        var halfW2 = car.dims.wid / 2;
+        spawnSkidMark(rearX + rightX2 * halfW2, rearZ + rightZ2 * halfW2, state.velHeading);
+        spawnSkidMark(rearX - rightX2 * halfW2, rearZ - rightZ2 * halfW2, state.velHeading);
+      }
+    } else {
+      state.skidTimer = 0;
+    }
 
     var moveX = Math.sin(state.velHeading), moveZ = Math.cos(state.velHeading);
     var collided = tryMove(moveX * state.speed * dt, moveZ * state.speed * dt);
@@ -1462,8 +1535,8 @@
         b.mesh.position.set(b.x, 0, b.z);
         b.mesh.rotation.y = Math.atan2(dirX, dirZ);
       }
-      b.mesh.children.forEach(function (c) {
-        if (c.userData.isWheel) c.rotation.x += dt * (state.mapId === "loop" ? 6 : 3);
+      b.mesh.traverse(function (c) {
+        if (c.userData.isWheel) c.rotation.x += dt * (b.speed / WHEEL_RADIUS);
       });
     }
   }
@@ -1862,10 +1935,11 @@
       posX: start.x, posZ: start.z,
       lap: 1, trackProgress: 0, lastArcSample: 0, distance: 0,
       drifting: false, started: false, finished: false,
-      shakeTimer: 0, wasColliding: false,
+      shakeTimer: 0, wasColliding: false, skidTimer: 0,
       mapId: selection.map,
     };
 
+    initSkidPool(scene);
     buildBots(start);
     setViewMode(viewMode);
     viewBtnEl.style.display = "flex";
@@ -2006,7 +2080,7 @@
     if (mode === "menu") {
       if (previewCar) {
         previewCar.rotation.y += dt * 0.6;
-        previewCar.children.forEach(function (c) {
+        previewCar.traverse(function (c) {
           if (c.userData.isWheel) c.rotation.x += dt * 4;
         });
       }
@@ -2017,8 +2091,8 @@
       updateHud();
       updateEngineSound();
       if (playerCarMesh) {
-        playerCarMesh.children.forEach(function (c) {
-          if (c.userData.isWheel) c.rotation.x += dt * (state.speed * 0.6);
+        playerCarMesh.traverse(function (c) {
+          if (c.userData.isWheel) c.rotation.x += dt * (state.speed / WHEEL_RADIUS);
         });
       }
       renderer.render(scene, camera);
