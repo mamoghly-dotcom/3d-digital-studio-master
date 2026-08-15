@@ -251,6 +251,70 @@
   #raceBoard .rb-row.me { color: #4ade80; font-weight: 700; }
   #raceBoard .rb-gap { opacity: 0.8; }
 
+  #viewBtn {
+    position: fixed;
+    left: 14px;
+    bottom: 152px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(10,14,26,0.55);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #eef2ff;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    z-index: 11;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #viewBtn small { font-size: 7px; font-weight: 700; margin-top: 1px; letter-spacing: 0.3px; }
+  #viewBtn.active { background: rgba(74,222,128,0.35); border-color: #4ade80; }
+
+  #finishOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    background: rgba(6,9,17,0.72);
+    backdrop-filter: blur(2px);
+  }
+  #finishCard {
+    width: 100%;
+    max-width: 340px;
+    background: linear-gradient(180deg, #161f30, #0f1626);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 22px 20px;
+    box-sizing: border-box;
+    color: #eef2ff;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  #finishTitle { margin: 0 0 6px; font-size: 22px; }
+  #finishRank { font-size: 14px; color: #9fb0d0; margin-bottom: 14px; }
+  #finishStandings { text-align: left; font-size: 13px; line-height: 1.9; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 14px; }
+  #finishStandings .rb-row.me { color: #4ade80; font-weight: 700; }
+  #finishStandings .rb-row { display: flex; justify-content: space-between; }
+  #finishBtns { display: flex; gap: 10px; margin-top: 18px; }
+  #finishBtns button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #finishRetryBtn { background: linear-gradient(180deg, #4ade80, #16a34a); color: #06210f; }
+  #finishMenuBtn { background: rgba(255,255,255,0.1); color: #eef2ff; border: 1px solid rgba(255,255,255,0.18); }
+
   #driftBadge {
     position: fixed;
     top: 70px;
@@ -350,6 +414,7 @@
     .btn-group { gap: 8px; }
     .pedal-btn { width: 82px; height: 82px; font-size: 15px; }
     .pedal-btn.steer { width: 60px; height: 60px; font-size: 19px; }
+    #viewBtn { left: 12px; bottom: 118px; width: 46px; height: 46px; font-size: 16px; }
   }
 
   #creditFooter {
@@ -380,6 +445,7 @@
 <div id="menuBtn">☰ Menü</div>
 <div id="raceBoard" class="panel"></div>
 <div id="driftBadge">DRİFT!</div>
+<div id="viewBtn">🎥<small id="viewBtnLabel">ÜSTTEN</small></div>
 
 <div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
 
@@ -425,6 +491,18 @@
     <div id="mapGrid"></div>
 
     <button id="startBtn">BAŞLA 🏁</button>
+  </div>
+</div>
+
+<div id="finishOverlay">
+  <div id="finishCard">
+    <h2 id="finishTitle">🏁 Yarış Bitti</h2>
+    <div id="finishRank"></div>
+    <div id="finishStandings"></div>
+    <div id="finishBtns">
+      <button id="finishRetryBtn">Tekrar Oyna</button>
+      <button id="finishMenuBtn">Menüye Dön</button>
+    </div>
   </div>
 </div>
 
@@ -827,6 +905,8 @@
     banner.lookAt(START.x + START.tx, 7.6, START.z + START.tz);
     rootGroup.add(banner);
 
+    buildingBoxes = [];
+
     var trunkGeo = new THREE.CylinderGeometry(0.25, 0.32, 2.2, 6);
     var trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3a22 });
     var foliageGeo = new THREE.ConeGeometry(1.6, 3.6, 7);
@@ -845,12 +925,14 @@
       group.add(trunk, foliage);
       var scale = 0.8 + Math.random() * 0.9;
       group.scale.setScalar(scale);
-      group.position.set(px + (px / outLen) * offset, 0, pz + (pz / outLen) * offset);
+      var tx2 = px + (px / outLen) * offset, tz2 = pz + (pz / outLen) * offset;
+      group.position.set(tx2, 0, tz2);
       group.rotation.y = Math.random() * Math.PI * 2;
       rootGroup.add(group);
+      var tr = 0.75 * scale + CAR_RADIUS;
+      buildingBoxes.push({ minX: tx2 - tr, maxX: tx2 + tr, minZ: tz2 - tr, maxZ: tz2 + tr });
     }
 
-    buildingBoxes = [];
     return { heading: Math.atan2(START.tx, START.tz), x: START.x, z: START.z };
   }
 
@@ -966,6 +1048,8 @@
       group.add(trunk, foliage);
       group.position.set(gx, 0, gz);
       rootGroup.add(group);
+      var tr2 = 0.65 + CAR_RADIUS;
+      buildingBoxes.push({ minX: gx - tr2, maxX: gx + tr2, minZ: gz - tr2, maxZ: gz + tr2 });
     }
 
     START = { x: 0, z: 0, tx: 0, tz: 1 };
@@ -980,9 +1064,10 @@
   var SPEED_TO_KMH = 3.6;
   var STEER_RESPONSE = 5;
   var HANDBRAKE_GRIP_MULT = 0.12;
+  var FINISH_LAPS = 2;
   var CAM_HEIGHT = 1.35;
 
-  var state = null, car = null, mode = "menu", bots = null;
+  var state = null, car = null, mode = "menu", bots = null, playerCarMesh = null, viewMode = "cockpit";
   var clock = new THREE.Clock();
 
   function normAngle(a) {
@@ -1001,13 +1086,16 @@
 
   function tryMove(dx, dz) {
     var nx = state.posX + dx, nz = state.posZ + dz;
-    if (!collidesBuildings(nx, nz)) { state.posX = nx; state.posZ = nz; return; }
-    if (!collidesBuildings(nx, state.posZ)) { state.posX = nx; state.speed *= 0.85; return; }
-    if (!collidesBuildings(state.posX, nz)) { state.posZ = nz; state.speed *= 0.85; return; }
+    if (!collidesBuildings(nx, nz)) { state.posX = nx; state.posZ = nz; return false; }
+    if (!collidesBuildings(nx, state.posZ)) { state.posX = nx; state.speed *= 0.85; return true; }
+    if (!collidesBuildings(state.posX, nz)) { state.posZ = nz; state.speed *= 0.85; return true; }
     state.speed *= 0.4;
+    return true;
   }
 
   function updatePhysics(dt) {
+    if (state.finished) return;
+
     var steerTarget = (state.steerLeft ? -1 : 0) + (state.steerRight ? 1 : 0);
     state.steerAngle += (steerTarget - state.steerAngle) * Math.min(1, STEER_RESPONSE * dt);
 
@@ -1033,7 +1121,14 @@
     state.drifting = Math.abs(diff) > 0.16 && state.speed > 4;
 
     var moveX = Math.sin(state.velHeading), moveZ = Math.cos(state.velHeading);
-    tryMove(moveX * state.speed * dt, moveZ * state.speed * dt);
+    var collided = tryMove(moveX * state.speed * dt, moveZ * state.speed * dt);
+    if (collided && !state.wasColliding) {
+      state.speed *= 0.5;
+      state.shakeTimer = 0.35;
+      playImpactSound();
+    }
+    state.wasColliding = collided;
+    if (state.shakeTimer > 0) state.shakeTimer = Math.max(0, state.shakeTimer - dt);
 
     state.distance += state.speed * dt;
 
@@ -1045,6 +1140,7 @@
       state.trackProgress += progressDelta;
       state.lastArcSample = nearestArc;
       state.lap = Math.floor(state.trackProgress / TOTAL_LENGTH) + 1;
+      if (state.lap > FINISH_LAPS) { finishRace(); return; }
     }
 
     updateBots(dt);
@@ -1091,12 +1187,32 @@
 
   function updateCamera() {
     var fwdX = Math.sin(state.heading), fwdZ = Math.cos(state.heading);
-    camera.position.set(state.posX, CAM_HEIGHT, state.posZ);
-    camera.up.set(0, 1, 0);
-    camera.lookAt(state.posX + fwdX * 10, CAM_HEIGHT, state.posZ + fwdZ * 10);
-    var bank = THREE.MathUtils.clamp(state.steerAngle * 0.16, -0.16, 0.16);
-    camera.rotateZ(bank);
+
+    if (playerCarMesh) {
+      playerCarMesh.position.set(state.posX, 0, state.posZ);
+      playerCarMesh.rotation.y = state.heading;
+    }
+
+    if (viewMode === "chase") {
+      var backDist = 9, upDist = 5.5;
+      camera.position.set(state.posX - fwdX * backDist, upDist, state.posZ - fwdZ * backDist);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(state.posX + fwdX * 4, 1.0, state.posZ + fwdZ * 4);
+    } else {
+      camera.position.set(state.posX, CAM_HEIGHT, state.posZ);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(state.posX + fwdX * 10, CAM_HEIGHT, state.posZ + fwdZ * 10);
+      var bank = THREE.MathUtils.clamp(state.steerAngle * 0.16, -0.16, 0.16);
+      camera.rotateZ(bank);
+    }
     wheel.rotation.z = -state.steerAngle * 0.85;
+
+    if (state.shakeTimer > 0) {
+      var s = state.shakeTimer;
+      camera.position.x += (Math.random() - 0.5) * 0.3 * s;
+      camera.position.y += (Math.random() - 0.5) * 0.2 * s;
+      camera.position.z += (Math.random() - 0.5) * 0.3 * s;
+    }
   }
 
   /* ===========================================================
@@ -1135,6 +1251,37 @@
     raceBoardEl.innerHTML = rows.join("");
     raceBoardEl.style.display = "block";
   }
+
+  var finishOverlayEl = document.getElementById("finishOverlay");
+  var finishRankEl = document.getElementById("finishRank");
+  var finishStandingsEl = document.getElementById("finishStandings");
+
+  function finishRace() {
+    state.finished = true;
+    state.gas = false; state.brake = false; state.steerLeft = false; state.steerRight = false;
+    silenceEngine();
+
+    var entries = [{ name: "SEN", progress: state.trackProgress, me: true }];
+    bots.forEach(function (b) { entries.push({ name: b.name, progress: b.distance, me: false }); });
+    entries.sort(function (a, b) { return b.progress - a.progress; });
+    var playerRank = 1;
+    entries.forEach(function (e, i) { if (e.me) playerRank = i + 1; });
+
+    finishRankEl.textContent = playerRank + ". sırada bitirdin! (" + FINISH_LAPS + " tur)";
+    finishStandingsEl.innerHTML = entries.map(function (e, i) {
+      return '<div class="rb-row' + (e.me ? " me" : "") + '"><span>' + (i + 1) + ". " + e.name + "</span></div>";
+    }).join("");
+    finishOverlayEl.style.display = "flex";
+  }
+
+  document.getElementById("finishRetryBtn").addEventListener("click", function () {
+    finishOverlayEl.style.display = "none";
+    startGame();
+  });
+  document.getElementById("finishMenuBtn").addEventListener("click", function () {
+    finishOverlayEl.style.display = "none";
+    backToMenu();
+  });
 
   function updateHud() {
     var kmh = Math.round(state.speed * SPEED_TO_KMH);
@@ -1188,6 +1335,24 @@
   }
   function silenceEngine() {
     if (engineGain) engineGain.gain.value = 0;
+  }
+
+  function playImpactSound() {
+    if (!audioCtx) return;
+    try {
+      var t = audioCtx.currentTime;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(170, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      gain.gain.setValueAtTime(0.5, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.22);
+    } catch (e) { /* ses desteklenmiyorsa sessizce yok say */ }
   }
 
   /* ===========================================================
@@ -1300,17 +1465,23 @@
 
     scene.add(camera);
 
+    playerCarMesh = buildCarMesh(car, selection.paint, selection.rim);
+    scene.add(playerCarMesh);
+
     state = {
       gas: false, brake: false, steerLeft: false, steerRight: false,
       steerAngle: 0, speed: 0,
       heading: start.heading, velHeading: start.heading,
       posX: start.x, posZ: start.z,
       lap: 1, trackProgress: 0, lastArcSample: 0, distance: 0,
-      drifting: false, started: false,
+      drifting: false, started: false, finished: false,
+      shakeTimer: 0, wasColliding: false,
       mapId: selection.map,
     };
 
     buildBots(start);
+    setViewMode(viewMode);
+    viewBtnEl.style.display = "flex";
 
     carNameTagEl.textContent = car.name + " · " + (selection.map === "loop" ? "Yarış Pisti" : "Açık Şehir");
     startHintEl.style.display = "block";
@@ -1358,11 +1529,31 @@
     controlsEl.style.display = "none";
     creditEl.style.display = "none";
     menuBtnEl.style.display = "none";
+    viewBtnEl.style.display = "none";
     canvas.style.display = "none";
     driftBadgeEl.classList.remove("show");
     raceBoardEl.style.display = "none";
+    finishOverlayEl.style.display = "none";
     resizePreview();
   }
+
+  var viewBtnEl = document.getElementById("viewBtn");
+  var viewBtnLabelEl = document.getElementById("viewBtnLabel");
+
+  function setViewMode(newMode) {
+    viewMode = newMode;
+    var chase = viewMode === "chase";
+    if (wheel) wheel.visible = !chase;
+    if (hood) hood.visible = !chase;
+    if (dash) dash.visible = !chase;
+    if (playerCarMesh) playerCarMesh.visible = chase;
+    viewBtnLabelEl.textContent = chase ? "KOKPİT" : "ÜSTTEN";
+    viewBtnEl.classList.toggle("active", chase);
+  }
+
+  viewBtnEl.addEventListener("click", function () {
+    setViewMode(viewMode === "chase" ? "cockpit" : "chase");
+  });
 
   document.getElementById("startBtn").addEventListener("click", startGame);
   menuBtnEl.addEventListener("click", backToMenu);
@@ -1387,6 +1578,11 @@
       updateCamera();
       updateHud();
       updateEngineSound();
+      if (playerCarMesh) {
+        playerCarMesh.children.forEach(function (c) {
+          if (c.userData.isWheel) c.rotation.x += dt * (state.speed * 0.6);
+        });
+      }
       renderer.render(scene, camera);
     }
   }
