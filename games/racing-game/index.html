@@ -284,6 +284,12 @@
     z-index: 10;
   }
 
+  .btn-group {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+  }
+
   .pedal-btn {
     width: 108px;
     height: 108px;
@@ -322,6 +328,13 @@
 
   .pedal-btn.active { transform: scale(0.92); filter: brightness(1.25); }
 
+  @media (max-width: 480px) {
+    #controls { padding: 0 12px 18px 12px; }
+    .btn-group { gap: 8px; }
+    .pedal-btn { width: 82px; height: 82px; font-size: 15px; }
+    .pedal-btn.steer { width: 60px; height: 60px; font-size: 19px; }
+  }
+
   #creditFooter {
     position: fixed;
     bottom: 8px;
@@ -353,10 +366,14 @@
 <div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
 
 <div id="controls">
-  <div id="leftBtn" class="pedal-btn steer">◀<small>SOL</small></div>
-  <div id="brakeBtn" class="pedal-btn">FREN<small>BRAKE</small></div>
-  <div id="gasBtn" class="pedal-btn">GAZ<small>GAS</small></div>
-  <div id="rightBtn" class="pedal-btn steer">▶<small>SAĞ</small></div>
+  <div class="btn-group">
+    <div id="leftBtn" class="pedal-btn steer">◀<small>SOL</small></div>
+    <div id="rightBtn" class="pedal-btn steer">▶<small>SAĞ</small></div>
+  </div>
+  <div class="btn-group">
+    <div id="brakeBtn" class="pedal-btn">FREN<small>BRAKE</small></div>
+    <div id="gasBtn" class="pedal-btn">GAZ<small>GAS</small></div>
+  </div>
 </div>
 
 <div id="creditFooter">3D Digital Studio — Yarış Prototipi</div>
