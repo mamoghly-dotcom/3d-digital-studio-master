@@ -1393,7 +1393,7 @@
   var SPEED_TO_KMH = 3.6;
   var STEER_RESPONSE = 5;
   var HANDBRAKE_GRIP_MULT = 0.12;
-  var NATURAL_DRIFT_GRIP_MULT = 0.4;
+  var NATURAL_DRIFT_GRIP_MULT = 0.22;
   var FINISH_LAPS = 2;
   var REVERSE_ACCEL = 12;
   var REVERSE_MAX_RATIO = 0.35;
@@ -1560,7 +1560,7 @@
       playerCarMesh.position.set(state.posX, 0, state.posZ);
       playerCarMesh.rotation.y = state.heading;
       if (playerCarMesh.userData.frontWheelGroups) {
-        var wheelTurn = state.steerAngle * 0.5;
+        var wheelTurn = -state.steerAngle * 0.5;
         playerCarMesh.userData.frontWheelGroups.forEach(function (wg) { wg.rotation.y = wheelTurn; });
       }
     }
