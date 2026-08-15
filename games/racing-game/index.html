@@ -937,32 +937,51 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame, getNearestProgress, CITY_LINES;
+  var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame, getNearestProgress, getTrackLateralDist, LOOP_HALF_WIDTH, CITY_LINES;
   var CAR_RADIUS = 1.1;
 
   function buildRoadTexture() {
-    var w = 64, h = 256;
+    var w = 128, h = 256;
     var c = document.createElement("canvas");
     c.width = w; c.height = h;
     var ctx = c.getContext("2d");
 
-    ctx.fillStyle = "#84848c";
+    ctx.fillStyle = "#7c7c84";
     ctx.fillRect(0, 0, w, h);
 
+    // kenar bariyer/bordür şeridi (üst yarı kırmızı, alt yarı beyaz -> tekrarlayınca alternatif bariyer deseni)
     ctx.fillStyle = "#e0453f";
-    ctx.fillRect(0, 0, 9, h / 2);
-    ctx.fillRect(w - 9, 0, 9, h / 2);
+    ctx.fillRect(0, 0, 10, h / 2);
+    ctx.fillRect(w - 10, 0, 10, h / 2);
     ctx.fillStyle = "#f7f7f7";
-    ctx.fillRect(w / 2 - 4, 0, 8, h / 2);
+    ctx.fillRect(0, h / 2, 10, h / 2);
+    ctx.fillRect(w - 10, h / 2, 10, h / 2);
 
-    ctx.fillStyle = "#f7f7f7";
-    ctx.fillRect(0, h / 2, 9, h / 2);
-    ctx.fillRect(w - 9, h / 2, 9, h / 2);
+    // 4 şerit: 3 iç şerit ayırıcı kesikli çizgi
+    ctx.fillStyle = "#f2e9c8";
+    [0.25, 0.5, 0.75].forEach(function (fx) {
+      ctx.fillRect(w * fx - 3, 0, 6, h / 2);
+    });
 
     var tex = new THREE.CanvasTexture(c);
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
+  function buildBarrierTexture() {
+    var w = 32, h = 32;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#e0453f";
+    ctx.fillRect(0, 0, w / 2, h);
+    ctx.fillStyle = "#f7f7f7";
+    ctx.fillRect(w / 2, 0, w / 2, h);
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
     return tex;
   }
 
@@ -995,7 +1014,7 @@
   function buildLoopMap(rootGroup) {
     var R0 = 150, RW = 26, FREQ = 3;
     var SAMPLES = 720;
-    var ROAD_HALF_WIDTH = 6.5;
+    var ROAD_HALF_WIDTH = 12; // 4 şerit
 
     function trackRadius(t) { return R0 + RW * Math.sin(FREQ * t); }
 
@@ -1053,6 +1072,18 @@
       return cumDist[best];
     };
 
+    getTrackLateralDist = function (x, z) {
+      var bestD = Infinity;
+      for (var i = 0; i < SAMPLES; i++) {
+        var p = basePts[i];
+        var dx = x - p.x, dz = z - p.z;
+        var d = dx * dx + dz * dz;
+        if (d < bestD) bestD = d;
+      }
+      return Math.sqrt(bestD);
+    };
+
+    LOOP_HALF_WIDTH = ROAD_HALF_WIDTH;
     START = getTrackFrame(0);
 
     var ground = new THREE.Mesh(
@@ -1095,6 +1126,43 @@
     var roadMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: roadTexture, side: THREE.DoubleSide, roughness: 0.95 }));
     roadMesh.position.y = 0.05;
     rootGroup.add(roadMesh);
+
+    // pistin dışına çıkışı engelleyen bariyerler (her iki kenar boyunca), kırmızı/beyaz şeritli
+    var barrierTexture = buildBarrierTexture();
+    var BARRIER_TILE = 6;
+    [1, -1].forEach(function (side) {
+      var barVertCount = (SAMPLES + 1) * 2;
+      var barPos = new Float32Array(barVertCount * 3);
+      var barNorm = new Float32Array(barVertCount * 3);
+      var barUv = new Float32Array(barVertCount * 2);
+      var barH = 0.85;
+      for (var i = 0; i <= SAMPLES; i++) {
+        var p = points[i], tg = tangents[i];
+        var nx = -tg.z, nz = tg.x;
+        var ex = p.x + nx * ROAD_HALF_WIDTH * side, ez = p.z + nz * ROAD_HALF_WIDTH * side;
+        var base = i * 2 * 3;
+        barPos[base] = ex; barPos[base + 1] = 0; barPos[base + 2] = ez;
+        barPos[base + 3] = ex; barPos[base + 4] = barH; barPos[base + 5] = ez;
+        barNorm[base] = nx * side; barNorm[base + 1] = 0; barNorm[base + 2] = nz * side;
+        barNorm[base + 3] = nx * side; barNorm[base + 4] = 0; barNorm[base + 5] = nz * side;
+        var v = cumDist[i] / BARRIER_TILE;
+        var uvbase = i * 2 * 2;
+        barUv[uvbase] = v; barUv[uvbase + 1] = 0;
+        barUv[uvbase + 2] = v; barUv[uvbase + 3] = 1;
+      }
+      var barIdx = [];
+      for (var i = 0; i < SAMPLES; i++) {
+        var a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+        barIdx.push(a, b, c, b, d, c);
+      }
+      var barGeo = new THREE.BufferGeometry();
+      barGeo.setAttribute("position", new THREE.BufferAttribute(barPos, 3));
+      barGeo.setAttribute("normal", new THREE.BufferAttribute(barNorm, 3));
+      barGeo.setAttribute("uv", new THREE.BufferAttribute(barUv, 2));
+      barGeo.setIndex(barIdx);
+      var barMat = new THREE.MeshStandardMaterial({ map: barrierTexture, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide });
+      rootGroup.add(new THREE.Mesh(barGeo, barMat));
+    });
 
     var nx0 = -START.tz, nz0 = START.tx;
     var poleGeo = new THREE.CylinderGeometry(0.35, 0.35, 8, 8);
@@ -1293,11 +1361,19 @@
     return false;
   }
 
+  function isBlocked(x, z) {
+    if (collidesBuildings(x, z)) return true;
+    if (state.mapId === "loop" && getTrackLateralDist) {
+      if (getTrackLateralDist(x, z) > LOOP_HALF_WIDTH - 0.5) return true;
+    }
+    return false;
+  }
+
   function tryMove(dx, dz) {
     var nx = state.posX + dx, nz = state.posZ + dz;
-    if (!collidesBuildings(nx, nz)) { state.posX = nx; state.posZ = nz; return false; }
-    if (!collidesBuildings(nx, state.posZ)) { state.posX = nx; state.speed *= 0.85; return true; }
-    if (!collidesBuildings(state.posX, nz)) { state.posZ = nz; state.speed *= 0.85; return true; }
+    if (!isBlocked(nx, nz)) { state.posX = nx; state.posZ = nz; return false; }
+    if (!isBlocked(nx, state.posZ)) { state.posX = nx; state.speed *= 0.85; return true; }
+    if (!isBlocked(state.posX, nz)) { state.posZ = nz; state.speed *= 0.85; return true; }
     state.speed *= 0.4;
     return true;
   }
@@ -1527,6 +1603,29 @@
    * =========================================================== */
   var audioCtx = null, engineOsc = null, engineGain = null;
   var engineSubOsc = null, engineFilter = null, engineLfo = null, engineLfoGain = null;
+  var engineShaper = null, engineNoise = null, engineNoiseFilter = null, engineNoiseGain = null;
+  function makeDistortionCurve(amount) {
+    var n = 512, curve = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var x = (i * 2) / n - 1;
+      curve[i] = Math.tanh(x * amount) / Math.tanh(amount);
+    }
+    return curve;
+  }
+
+  function makeNoiseBuffer(ctx) {
+    var len = ctx.sampleRate * 2;
+    var buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    var last = 0;
+    for (var i = 0; i < len; i++) {
+      var white = Math.random() * 2 - 1;
+      last = (last + 0.06 * white) / 1.06; // hafif kahverengi gürültü: daha kalın/motor benzeri
+      data[i] = last * 3.2;
+    }
+    return buffer;
+  }
+
   function ensureEngineSound() {
     if (audioCtx) return;
     try {
@@ -1536,58 +1635,84 @@
       // ana motor tonu (satürasyonlu testere dalgası)
       engineOsc = audioCtx.createOscillator();
       engineOsc.type = "sawtooth";
-      engineOsc.frequency.value = 45;
+      engineOsc.frequency.value = 38;
 
-      // alt oktav (V-motor gürlemesi için kalınlık katar)
+      // alt oktav kare dalga: daha kalın/gürültülü V-motor gürlemesi
       engineSubOsc = audioCtx.createOscillator();
-      engineSubOsc.type = "triangle";
-      engineSubOsc.frequency.value = 22.5;
+      engineSubOsc.type = "square";
+      engineSubOsc.frequency.value = 19;
+
+      // hafif titreşim (rölanti pürüzü) için yavaş LFO
+      engineLfo = audioCtx.createOscillator();
+      engineLfo.type = "sine";
+      engineLfo.frequency.value = 8;
+      engineLfoGain = audioCtx.createGain();
+      engineLfoGain.gain.value = 5;
+      engineLfo.connect(engineLfoGain);
+      engineLfoGain.connect(engineOsc.frequency);
+
+      var subGain = audioCtx.createGain();
+      subGain.gain.value = 0.7;
+
+      // ton karışımını hafif bozarak (distortion) sentetik "temizliği" kırıp motor hırıltısı katar
+      engineShaper = audioCtx.createWaveShaper();
+      engineShaper.curve = makeDistortionCurve(2.6);
+      engineShaper.oversample = "2x";
 
       // alçak geçiren filtre: devir arttıkça daha "açık"/parlak ses
       engineFilter = audioCtx.createBiquadFilter();
       engineFilter.type = "lowpass";
       engineFilter.Q.value = 0.7;
-      engineFilter.frequency.value = 350;
-
-      // hafif titreşim (rölanti pürüzü) için yavaş LFO
-      engineLfo = audioCtx.createOscillator();
-      engineLfo.type = "sine";
-      engineLfo.frequency.value = 7;
-      engineLfoGain = audioCtx.createGain();
-      engineLfoGain.gain.value = 4;
-      engineLfo.connect(engineLfoGain);
-      engineLfoGain.connect(engineOsc.frequency);
-
-      var subGain = audioCtx.createGain();
-      subGain.gain.value = 0.6;
+      engineFilter.frequency.value = 320;
 
       engineGain = audioCtx.createGain();
       engineGain.gain.value = 0.0;
 
-      engineOsc.connect(engineFilter);
+      engineOsc.connect(engineShaper);
       engineSubOsc.connect(subGain);
-      subGain.connect(engineFilter);
+      subGain.connect(engineShaper);
+      engineShaper.connect(engineFilter);
       engineFilter.connect(engineGain);
+
+      // egzoz/yanma gürültüsü: bant geçiren filtreli kahverengi gürültü, devirle birlikte açılır
+      engineNoise = audioCtx.createBufferSource();
+      engineNoise.buffer = makeNoiseBuffer(audioCtx);
+      engineNoise.loop = true;
+      engineNoiseFilter = audioCtx.createBiquadFilter();
+      engineNoiseFilter.type = "bandpass";
+      engineNoiseFilter.Q.value = 0.9;
+      engineNoiseFilter.frequency.value = 260;
+      engineNoiseGain = audioCtx.createGain();
+      engineNoiseGain.gain.value = 0;
+      engineNoise.connect(engineNoiseFilter);
+      engineNoiseFilter.connect(engineNoiseGain);
+      engineNoiseGain.connect(engineGain);
+
       engineGain.connect(audioCtx.destination);
 
       engineOsc.start();
       engineSubOsc.start();
       engineLfo.start();
+      engineNoise.start();
     } catch (e) { /* ses desteklenmiyorsa sessizce yok say */ }
   }
   function updateEngineSound() {
     if (!audioCtx || !engineOsc) return;
     var ratio = Math.min(1, Math.abs(state.speed) / car.maxSpeed);
     var t = audioCtx.currentTime;
-    var freq = 42 + ratio * 210;
+    var freq = 36 + ratio * 240;
     engineOsc.frequency.setTargetAtTime(freq, t, 0.06);
     engineSubOsc.frequency.setTargetAtTime(freq / 2, t, 0.06);
-    engineFilter.frequency.setTargetAtTime(280 + ratio * 3200, t, 0.08);
-    var targetGain = soundEnabled ? 0.02 + ratio * 0.07 : 0;
+    engineFilter.frequency.setTargetAtTime(260 + ratio * 3400, t, 0.08);
+    engineNoiseFilter.frequency.setTargetAtTime(220 + ratio * 1600, t, 0.08);
+    var targetGain = soundEnabled ? 0.09 + ratio * 0.2 : 0;
+    var noiseTargetGain = soundEnabled ? 0.35 + ratio * 0.55 : 0;
     engineGain.gain.setTargetAtTime(targetGain, t, 0.05);
+    engineNoiseGain.gain.setTargetAtTime(noiseTargetGain, t, 0.05);
   }
   function silenceEngine() {
     if (engineGain) engineGain.gain.value = 0;
+    if (engineNoiseGain) engineNoiseGain.gain.value = 0;
   }
 
   function playImpactSound() {
