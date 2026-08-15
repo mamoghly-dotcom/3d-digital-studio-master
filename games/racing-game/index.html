@@ -234,6 +234,23 @@
     z-index: 11;
   }
 
+  #raceBoard {
+    position: fixed;
+    top: 92px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    min-width: 170px;
+    font-size: 11px;
+    line-height: 1.6;
+    text-align: left;
+    z-index: 10;
+    font-variant-numeric: tabular-nums;
+  }
+  #raceBoard .rb-row { display: flex; justify-content: space-between; gap: 10px; white-space: nowrap; }
+  #raceBoard .rb-row.me { color: #4ade80; font-weight: 700; }
+  #raceBoard .rb-gap { opacity: 0.8; }
+
   #driftBadge {
     position: fixed;
     top: 70px;
@@ -361,6 +378,7 @@
 </div>
 
 <div id="menuBtn">☰ Menü</div>
+<div id="raceBoard" class="panel"></div>
 <div id="driftBadge">DRİFT!</div>
 
 <div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
@@ -434,6 +452,12 @@
   ];
 
   var PAINTS = [0xdc2626, 0xf97316, 0xfacc15, 0x16a34a, 0x2563eb, 0x9333ea, 0xf4f4f5, 0x18181b];
+
+  var BOT_DEFS = [
+    { presetIndex: 0, name: "Kırmızı Şimşek", color: 0xef4444, rim: 0x1c1c22, loopSpeed: 34, citySpeed: 15 },
+    { presetIndex: 2, name: "Mavi Kasırga", color: 0x3b82f6, rim: 0xc7c9cc, loopSpeed: 41, citySpeed: 17 },
+    { presetIndex: 1, name: "Sarı Yıldırım", color: 0xf59e0b, rim: 0xd4af37, loopSpeed: 47, citySpeed: 19 },
+  ];
   var RIMS = [0xc7c9cc, 0x1c1c22, 0xd4af37, 0xef4444];
 
   var STAT_RANGE = {
@@ -628,7 +652,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame;
+  var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame, getNearestProgress, CITY_LINES;
   var CAR_RADIUS = 1.1;
 
   function buildRoadTexture() {
@@ -733,6 +757,17 @@
       return { x: x, z: z, tx: tx / tlen, tz: tz / tlen };
     };
 
+    getNearestProgress = function (x, z) {
+      var best = 0, bestD = Infinity;
+      for (var i = 0; i < SAMPLES; i++) {
+        var p = basePts[i];
+        var dx = x - p.x, dz = z - p.z;
+        var d = dx * dx + dz * dz;
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return cumDist[best];
+    };
+
     START = getTrackFrame(0);
 
     var ground = new THREE.Mesh(
@@ -823,6 +858,7 @@
   function buildCityMap(rootGroup) {
     var ROAD_HALF_WIDTH = 6.5;
     var LINES = [-150, -75, 0, 75, 150];
+    CITY_LINES = LINES;
     var SPAN = 190;
 
     var ground = new THREE.Mesh(
@@ -943,11 +979,10 @@
   var FRICTION = 7;
   var SPEED_TO_KMH = 3.6;
   var STEER_RESPONSE = 5;
-  var FINISH_NEAR = 8, FINISH_FAR = 30;
   var HANDBRAKE_GRIP_MULT = 0.12;
   var CAM_HEIGHT = 1.35;
 
-  var state = null, car = null, mode = "menu";
+  var state = null, car = null, mode = "menu", bots = null;
   var clock = new THREE.Clock();
 
   function normAngle(a) {
@@ -1003,11 +1038,55 @@
     state.distance += state.speed * dt;
 
     if (state.mapId === "loop") {
-      var dxF = state.posX - START.x, dzF = state.posZ - START.z;
-      var finishDist = Math.sqrt(dxF * dxF + dzF * dzF);
-      if (finishDist < FINISH_NEAR && !state.nearFinish) { state.lap += 1; state.nearFinish = true; }
-      else if (finishDist > FINISH_FAR) { state.nearFinish = false; }
+      var nearestArc = getNearestProgress(state.posX, state.posZ);
+      var progressDelta = nearestArc - state.lastArcSample;
+      if (progressDelta > TOTAL_LENGTH / 2) progressDelta -= TOTAL_LENGTH;
+      else if (progressDelta < -TOTAL_LENGTH / 2) progressDelta += TOTAL_LENGTH;
+      state.trackProgress += progressDelta;
+      state.lastArcSample = nearestArc;
+      state.lap = Math.floor(state.trackProgress / TOTAL_LENGTH) + 1;
     }
+
+    updateBots(dt);
+  }
+
+  function updateBots(dt) {
+    if (!bots) return;
+    for (var i = 0; i < bots.length; i++) {
+      var b = bots[i];
+      if (state.mapId === "loop") {
+        b.distance += b.speed * dt;
+        var f = getTrackFrame(b.distance);
+        var nx = -f.tz, nz = f.tx;
+        var lane = (i - 1) * 2.2;
+        b.mesh.position.set(f.x + nx * lane, 0, f.z + nz * lane);
+        b.mesh.rotation.y = Math.atan2(f.tx, f.tz);
+      } else {
+        var dx = b.targetX - b.x, dz = b.targetZ - b.z;
+        var dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 2) { pickCityBotTarget(b); dx = b.targetX - b.x; dz = b.targetZ - b.z; dist = Math.sqrt(dx * dx + dz * dz) || 1; }
+        var dirX = dx / dist, dirZ = dz / dist;
+        b.x += dirX * b.speed * dt;
+        b.z += dirZ * b.speed * dt;
+        b.mesh.position.set(b.x, 0, b.z);
+        b.mesh.rotation.y = Math.atan2(dirX, dirZ);
+      }
+      b.mesh.children.forEach(function (c) {
+        if (c.userData.isWheel) c.rotation.x += dt * (state.mapId === "loop" ? 6 : 3);
+      });
+    }
+  }
+
+  function pickCityBotTarget(b) {
+    var n = CITY_LINES.length;
+    var options = [];
+    if (b.gi > 0) options.push([b.gi - 1, b.gj]);
+    if (b.gi < n - 1) options.push([b.gi + 1, b.gj]);
+    if (b.gj > 0) options.push([b.gi, b.gj - 1]);
+    if (b.gj < n - 1) options.push([b.gi, b.gj + 1]);
+    var pick = options[(Math.random() * options.length) | 0];
+    b.gi = pick[0]; b.gj = pick[1];
+    b.targetX = CITY_LINES[b.gi]; b.targetZ = CITY_LINES[b.gj];
   }
 
   function updateCamera() {
@@ -1030,6 +1109,32 @@
   var carNameTagEl = document.getElementById("carNameTag");
   var startHintEl = document.getElementById("startHint");
   var driftBadgeEl = document.getElementById("driftBadge");
+  var raceBoardEl = document.getElementById("raceBoard");
+
+  function updateRaceBoard() {
+    if (!bots) return;
+    var rows;
+    if (state.mapId === "loop") {
+      var entries = [{ name: "SEN", progress: state.trackProgress, me: true }];
+      bots.forEach(function (b) { entries.push({ name: b.name, progress: b.distance, me: false }); });
+      entries.sort(function (a, b) { return b.progress - a.progress; });
+      rows = entries.map(function (e, i) {
+        var gap = e.me ? "" : (e.progress - state.trackProgress >= 0 ? "+" : "") + Math.round(e.progress - state.trackProgress) + "m";
+        return '<div class="rb-row' + (e.me ? " me" : "") + '"><span>' + (i + 1) + ". " + e.name + '</span><span class="rb-gap">' + gap + "</span></div>";
+      });
+    } else {
+      var list = bots.map(function (b) {
+        var dx = b.x - state.posX, dz = b.z - state.posZ;
+        return { name: b.name, dist: Math.sqrt(dx * dx + dz * dz) };
+      });
+      list.sort(function (a, b) { return a.dist - b.dist; });
+      rows = list.map(function (l) {
+        return '<div class="rb-row"><span>' + l.name + '</span><span class="rb-gap">' + Math.round(l.dist) + "m</span></div>";
+      });
+    }
+    raceBoardEl.innerHTML = rows.join("");
+    raceBoardEl.style.display = "block";
+  }
 
   function updateHud() {
     var kmh = Math.round(state.speed * SPEED_TO_KMH);
@@ -1047,6 +1152,7 @@
     }
 
     driftBadgeEl.classList.toggle("show", !!state.drifting);
+    updateRaceBoard();
 
     if (!state.started && state.speed > 0.05) {
       state.started = true;
@@ -1199,14 +1305,37 @@
       steerAngle: 0, speed: 0,
       heading: start.heading, velHeading: start.heading,
       posX: start.x, posZ: start.z,
-      lap: 1, nearFinish: true, distance: 0,
+      lap: 1, trackProgress: 0, lastArcSample: 0, distance: 0,
       drifting: false, started: false,
       mapId: selection.map,
     };
 
+    buildBots(start);
+
     carNameTagEl.textContent = car.name + " · " + (selection.map === "loop" ? "Yarış Pisti" : "Açık Şehir");
     startHintEl.style.display = "block";
     startHintEl.style.opacity = "1";
+  }
+
+  function buildBots(start) {
+    bots = BOT_DEFS.map(function (def, i) {
+      var preset = CAR_PRESETS[def.presetIndex];
+      var mesh = buildCarMesh(preset, def.color, def.rim);
+      scene.add(mesh);
+      var b = { mesh: mesh, name: def.name };
+      if (selection.map === "loop") {
+        b.distance = -(i + 1) * 45;
+        b.speed = def.loopSpeed;
+      } else {
+        var n = CITY_LINES.length;
+        b.gi = (Math.random() * n) | 0;
+        b.gj = (Math.random() * n) | 0;
+        b.x = CITY_LINES[b.gi]; b.z = CITY_LINES[b.gj];
+        b.speed = def.citySpeed;
+        pickCityBotTarget(b);
+      }
+      return b;
+    });
   }
 
   function startGame() {
@@ -1231,6 +1360,7 @@
     menuBtnEl.style.display = "none";
     canvas.style.display = "none";
     driftBadgeEl.classList.remove("show");
+    raceBoardEl.style.display = "none";
     resizePreview();
   }
 
