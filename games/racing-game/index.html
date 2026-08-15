@@ -386,13 +386,13 @@
     height: 108px;
     display: none;
     border-radius: 50%;
-    border: 1px solid rgba(103, 232, 249, 0.6);
-    background: radial-gradient(circle, rgba(8,40,48,0.55), rgba(4,10,18,0.75));
-    box-shadow: 0 0 14px rgba(103, 232, 249, 0.45), inset 0 0 18px rgba(103, 232, 249, 0.25);
+    border: 1px solid rgba(103, 232, 249, 0.45);
+    background: radial-gradient(circle, rgba(8,40,48,0.25), rgba(4,10,18,0.4));
+    box-shadow: 0 0 14px rgba(103, 232, 249, 0.3), inset 0 0 18px rgba(103, 232, 249, 0.15);
     z-index: 10;
     overflow: hidden;
   }
-  #minimapCanvas { width: 100%; height: 100%; display: block; opacity: 0.92; }
+  #minimapCanvas { width: 100%; height: 100%; display: block; opacity: 0.62; }
 
   @media (max-width: 480px) {
     #minimapWrap { bottom: 116px; width: 86px; height: 86px; }
@@ -533,6 +533,20 @@
     transition: opacity 0.4s ease;
   }
 
+  #countdownEl {
+    position: fixed;
+    top: 38%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 96px;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 0 24px rgba(74,222,128,0.7), 0 6px 18px rgba(0,0,0,0.6);
+    z-index: 13;
+    display: none;
+    pointer-events: none;
+  }
+
   #controls {
     position: fixed;
     bottom: 0;
@@ -644,7 +658,8 @@
 </div>
 <div id="viewBtn">🎥<small id="viewBtnLabel">ÜSTTEN</small></div>
 
-<div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
+<div id="startHint">SOL/SAĞ ile dönün · virajda FREN'e basılı tutarsan drift atarsın<br><small>(Klavye: ↑W gaz · ↓S fren · ←A/→D viraj)</small></div>
+<div id="countdownEl"></div>
 
 <div id="controls">
   <div class="btn-group">
@@ -1225,16 +1240,16 @@
     return new THREE.CanvasTexture(c);
   }
 
-  var SKID_POOL_SIZE = 100;
+  var SKID_POOL_SIZE = 220;
   var skidTexture = buildSkidTexture();
   var skidMarks = [], skidIndex = 0;
 
   function initSkidPool(rootGroup) {
     skidMarks = [];
     skidIndex = 0;
-    var geo = new THREE.PlaneGeometry(0.5, 1.5);
+    var geo = new THREE.PlaneGeometry(0.62, 1.9);
     for (var i = 0; i < SKID_POOL_SIZE; i++) {
-      var mat = new THREE.MeshBasicMaterial({ map: skidTexture, transparent: true, opacity: 0.6, depthWrite: false });
+      var mat = new THREE.MeshBasicMaterial({ map: skidTexture, transparent: true, opacity: 0.88, depthWrite: false });
       var plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = -Math.PI / 2;
       var pivot = new THREE.Group();
@@ -1252,6 +1267,31 @@
     m.position.set(x, 0.07, z);
     m.rotation.y = yaw;
     m.visible = true;
+  }
+
+  function buildFinishTexture() {
+    var w = 512, h = 96;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#f4c542";
+    ctx.fillRect(0, 0, w, h);
+    var checkSize = 24;
+    ctx.fillStyle = "#1a1a1a";
+    for (var cx = 0; cx < w; cx += checkSize) {
+      for (var cy = 0; cy < h; cy += checkSize) {
+        var col = Math.round(cx / checkSize), row = Math.round(cy / checkSize);
+        if (cy < checkSize || cy > h - checkSize * 2) {
+          if ((col + row) % 2 === 0) ctx.fillRect(cx, cy, checkSize, checkSize);
+        }
+      }
+    }
+    ctx.fillStyle = "#1a1a1a";
+    ctx.font = "bold 54px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("BİTİŞ", w / 2, h / 2);
+    return new THREE.CanvasTexture(c);
   }
 
   function buildBarrierTexture() {
@@ -1411,41 +1451,69 @@
     roadMesh.position.y = 0.05;
     rootGroup.add(roadMesh);
 
-    // pistin dışına çıkışı engelleyen bariyerler (her iki kenar boyunca), kırmızı/beyaz şeritli
+    // pistin dışına çıkışı engelleyen GERÇEK 3 boyutlu (kalınlıklı) bariyerler
     var barrierTexture = buildBarrierTexture();
     var BARRIER_TILE = 6;
-    [1, -1].forEach(function (side) {
-      var barVertCount = (SAMPLES + 1) * 2;
-      var barPos = new Float32Array(barVertCount * 3);
-      var barNorm = new Float32Array(barVertCount * 3);
-      var barUv = new Float32Array(barVertCount * 2);
-      var barH = 0.85;
+    var BAR_H = 0.85, BAR_THICK = 0.55;
+
+    function buildRibbon(edgeFn, material) {
+      var vertCount = (SAMPLES + 1) * 2;
+      var pos = new Float32Array(vertCount * 3);
+      var norm = new Float32Array(vertCount * 3);
+      var uv = new Float32Array(vertCount * 2);
       for (var i = 0; i <= SAMPLES; i++) {
-        var p = points[i], tg = tangents[i];
-        var nx = -tg.z, nz = tg.x;
-        var ex = p.x + nx * ROAD_HALF_WIDTH * side, ez = p.z + nz * ROAD_HALF_WIDTH * side;
+        var e = edgeFn(i);
         var base = i * 2 * 3;
-        barPos[base] = ex; barPos[base + 1] = 0; barPos[base + 2] = ez;
-        barPos[base + 3] = ex; barPos[base + 4] = barH; barPos[base + 5] = ez;
-        barNorm[base] = nx * side; barNorm[base + 1] = 0; barNorm[base + 2] = nz * side;
-        barNorm[base + 3] = nx * side; barNorm[base + 4] = 0; barNorm[base + 5] = nz * side;
+        pos[base] = e.x1; pos[base + 1] = e.y1; pos[base + 2] = e.z1;
+        pos[base + 3] = e.x2; pos[base + 4] = e.y2; pos[base + 5] = e.z2;
+        norm[base] = e.nx; norm[base + 1] = e.ny; norm[base + 2] = e.nz;
+        norm[base + 3] = e.nx; norm[base + 4] = e.ny; norm[base + 5] = e.nz;
         var v = cumDist[i] / BARRIER_TILE;
         var uvbase = i * 2 * 2;
-        barUv[uvbase] = v; barUv[uvbase + 1] = 0;
-        barUv[uvbase + 2] = v; barUv[uvbase + 3] = 1;
+        uv[uvbase] = 0; uv[uvbase + 1] = v;
+        uv[uvbase + 2] = 1; uv[uvbase + 3] = v;
       }
-      var barIdx = [];
+      var idx = [];
       for (var i = 0; i < SAMPLES; i++) {
         var a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
-        barIdx.push(a, b, c, b, d, c);
+        idx.push(a, b, c, b, d, c);
       }
-      var barGeo = new THREE.BufferGeometry();
-      barGeo.setAttribute("position", new THREE.BufferAttribute(barPos, 3));
-      barGeo.setAttribute("normal", new THREE.BufferAttribute(barNorm, 3));
-      barGeo.setAttribute("uv", new THREE.BufferAttribute(barUv, 2));
-      barGeo.setIndex(barIdx);
-      var barMat = new THREE.MeshStandardMaterial({ map: barrierTexture, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide });
-      rootGroup.add(new THREE.Mesh(barGeo, barMat));
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute("normal", new THREE.BufferAttribute(norm, 3));
+      geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      return new THREE.Mesh(geo, material);
+    }
+
+    var barrierStripedMat = new THREE.MeshStandardMaterial({ map: barrierTexture, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide });
+    var barrierTopMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d4, roughness: 0.7, side: THREE.DoubleSide });
+
+    [1, -1].forEach(function (side) {
+      function edge(i) {
+        var p = points[i], tg = tangents[i];
+        var nx = -tg.z, nz = tg.x;
+        return {
+          ix: p.x + nx * ROAD_HALF_WIDTH * side, iz: p.z + nz * ROAD_HALF_WIDTH * side,
+          ox: p.x + nx * (ROAD_HALF_WIDTH + BAR_THICK) * side, oz: p.z + nz * (ROAD_HALF_WIDTH + BAR_THICK) * side,
+          nx: nx * side, nz: nz * side,
+        };
+      }
+      // iç yüz (yola bakan)
+      rootGroup.add(buildRibbon(function (i) {
+        var e = edge(i);
+        return { x1: e.ix, y1: 0, z1: e.iz, x2: e.ix, y2: BAR_H, z2: e.iz, nx: -e.nx, ny: 0, nz: -e.nz };
+      }, barrierStripedMat));
+      // üst yüz
+      rootGroup.add(buildRibbon(function (i) {
+        var e = edge(i);
+        return { x1: e.ix, y1: BAR_H, z1: e.iz, x2: e.ox, y2: BAR_H, z2: e.oz, nx: 0, ny: 1, nz: 0 };
+      }, barrierTopMat));
+      // dış yüz
+      rootGroup.add(buildRibbon(function (i) {
+        var e = edge(i);
+        return { x1: e.ox, y1: BAR_H, z1: e.oz, x2: e.ox, y2: 0, z2: e.oz, nx: e.nx, ny: 0, nz: e.nz };
+      }, barrierStripedMat));
     });
 
     var nx0 = -START.tz, nz0 = START.tx;
@@ -1458,7 +1526,7 @@
     });
     var banner = new THREE.Mesh(
       new THREE.BoxGeometry(ROAD_HALF_WIDTH * 2 + 3, 1.4, 0.2),
-      new THREE.MeshStandardMaterial({ color: 0xf4c542 })
+      new THREE.MeshStandardMaterial({ map: buildFinishTexture(), color: 0xf4c542 })
     );
     banner.position.set(START.x, 7.6, START.z);
     banner.lookAt(START.x + START.tx, 7.6, START.z + START.tz);
@@ -1629,7 +1697,7 @@
   var REVERSE_MAX_RATIO = 0.35;
   var CAM_HEIGHT = 1.35;
 
-  var state = null, car = null, mode = "title", bots = null, playerCarMesh = null, viewMode = "cockpit";
+  var state = null, car = null, mode = "title", bots = null, playerCarMesh = null, viewMode = "chase";
   var clock = new THREE.Clock();
 
   function normAngle(a) {
@@ -1672,6 +1740,12 @@
       return;
     }
 
+    if (state.countdown > 0) {
+      state.countdown -= dt;
+      updateCountdownUi();
+      return;
+    }
+
     var steerTarget = (state.steerLeft ? -1 : 0) + (state.steerRight ? 1 : 0);
     state.steerAngle += (steerTarget - state.steerAngle) * Math.min(1, STEER_RESPONSE * dt);
 
@@ -1709,10 +1783,14 @@
     state.drifting = Math.abs(diff) > 0.16 && state.speed > 4;
     var slipping = Math.abs(diff) > 0.045 && Math.abs(state.speed) > 3;
 
+    // görsel kayma: gerçek bir driftte olduğu gibi kasa, tekerlere göre biraz yana savrulur
+    var targetSlide = THREE.MathUtils.clamp(diff * 2.2, -2.4, 2.4);
+    state.slideOffset += (targetSlide - state.slideOffset) * Math.min(1, 6 * dt);
+
     if (slipping) {
       state.skidTimer -= dt;
       if (state.skidTimer <= 0) {
-        state.skidTimer = 0.04;
+        state.skidTimer = 0.022;
         var fwdX2 = Math.sin(state.heading), fwdZ2 = Math.cos(state.heading);
         var rightX2 = fwdZ2, rightZ2 = -fwdX2;
         var axleOff = car.dims.len / 2 - 0.62;
@@ -1797,7 +1875,12 @@
     var fwdX = Math.sin(state.heading), fwdZ = Math.cos(state.heading);
 
     if (playerCarMesh) {
-      playerCarMesh.position.set(state.posX, 0, state.posZ);
+      var slideRightX = fwdZ, slideRightZ = -fwdX;
+      playerCarMesh.position.set(
+        state.posX + slideRightX * state.slideOffset * 0.12,
+        0,
+        state.posZ + slideRightZ * state.slideOffset * 0.12
+      );
       playerCarMesh.rotation.y = state.heading;
       if (playerCarMesh.userData.frontWheelGroups) {
         var wheelTurn = -state.steerAngle * 0.5;
@@ -1913,10 +1996,23 @@
     driftBadgeEl.classList.toggle("show", !!state.drifting);
     updateRaceBoard();
 
-    if (!state.started && state.speed > 0.05) {
-      state.started = true;
+  }
+
+  var countdownEl = document.getElementById("countdownEl");
+
+  function updateCountdownUi() {
+    var n = Math.ceil(state.countdown);
+    if (state.countdown <= 0) {
+      countdownEl.textContent = "GİT!";
+      countdownEl.style.color = "#4ade80";
       startHintEl.style.opacity = "0";
-      setTimeout(function () { startHintEl.style.display = "none"; }, 450);
+      setTimeout(function () {
+        countdownEl.style.display = "none";
+        startHintEl.style.display = "none";
+      }, 500);
+    } else {
+      countdownEl.textContent = String(n);
+      countdownEl.style.color = "#fff";
     }
   }
 
@@ -2258,7 +2354,7 @@
       drifting: false, started: false, finished: false,
       shakeTimer: 0, wasColliding: false, skidTimer: 0,
       damage: { front: 0, rear: 0, left: 0, right: 0 }, totalHits: 0,
-      dead: false, deadTimer: 0,
+      dead: false, deadTimer: 0, slideOffset: 0, countdown: 3,
       mapId: selection.map,
     };
 
@@ -2271,6 +2367,9 @@
     carNameTagEl.textContent = car.name + " · " + (selection.map === "loop" ? "Yarış Pisti" : "Açık Şehir");
     startHintEl.style.display = "block";
     startHintEl.style.opacity = "1";
+    countdownEl.style.display = "block";
+    countdownEl.textContent = "3";
+    countdownEl.style.color = "#fff";
   }
 
   function buildBots(start) {
@@ -2320,6 +2419,8 @@
     raceBoardEl.style.display = "none";
     finishOverlayEl.style.display = "none";
     minimapWrapEl.style.display = "none";
+    countdownEl.style.display = "none";
+    startHintEl.style.opacity = "1";
     deadToastEl.style.display = "none";
     resizePreview();
   }
