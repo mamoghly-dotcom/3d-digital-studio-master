@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Hız Pisti 3D — Basit Araba Yarışı</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1220;
+    font-family: "Segoe UI", Arial, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+
+  #gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 14px 18px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    color: #eef2ff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    z-index: 10;
+  }
+
+  #hud .panel {
+    background: rgba(10, 14, 26, 0.45);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 8px 14px;
+    backdrop-filter: blur(4px);
+  }
+
+  #lapPanel { font-size: 15px; letter-spacing: 0.5px; }
+  #lapPanel b { font-size: 20px; }
+
+  #speedPanel { text-align: right; }
+  #speedValue { font-size: 34px; font-weight: 700; line-height: 1; }
+  #speedUnit { font-size: 12px; opacity: 0.75; margin-left: 4px; }
+  #speedBar {
+    margin-top: 6px;
+    width: 150px;
+    height: 6px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #speedBarFill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #34d399, #fbbf24, #f87171);
+    transition: width 0.08s linear;
+  }
+
+  #startHint {
+    position: fixed;
+    top: 46%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    background: rgba(10,14,26,0.55);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 14px 22px;
+    border-radius: 12px;
+    font-size: 17px;
+    text-align: center;
+    z-index: 11;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 22px 26px 22px;
+    box-sizing: border-box;
+    z-index: 10;
+  }
+
+  .pedal-btn {
+    width: 108px;
+    height: 108px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    font-weight: 700;
+    font-size: 17px;
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.08s ease, filter 0.08s ease;
+  }
+
+  .pedal-btn small {
+    font-weight: 400;
+    font-size: 10px;
+    opacity: 0.8;
+    margin-top: 2px;
+  }
+
+  #brakeBtn {
+    background: radial-gradient(circle at 35% 30%, #ef5b5b, #b91c1c);
+  }
+
+  #gasBtn {
+    background: radial-gradient(circle at 35% 30%, #4ade80, #15803d);
+  }
+
+  .pedal-btn.active {
+    transform: scale(0.92);
+    filter: brightness(1.25);
+  }
+
+  #creditFooter {
+    position: fixed;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.35);
+    font-size: 11px;
+    z-index: 9;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="hud">
+  <div id="lapPanel" class="panel">TUR <b id="lapValue">1</b></div>
+  <div id="speedPanel" class="panel">
+    <span id="speedValue">0</span><span id="speedUnit">km/s</span>
+    <div id="speedBar"><div id="speedBarFill"></div></div>
+  </div>
+</div>
+
+<div id="startHint">🏁 Başlamak için GAZ'a basılı tutun<br><small>(Klavye: ↑ / W gaz, ↓ / S fren)</small></div>
+
+<div id="controls">
+  <div id="brakeBtn" class="pedal-btn">FREN<small>BRAKE</small></div>
+  <div id="gasBtn" class="pedal-btn">GAZ<small>GAS</small></div>
+</div>
+
+<div id="creditFooter">3D Digital Studio — Basit Yarış Prototipi</div>
+
+<script src="../../assets/js/vendor/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------------------------------------------------
+   *  TEMEL SAHNE KURULUMU
+   * --------------------------------------------------------- */
+  var canvas = document.getElementById("gameCanvas");
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, logarithmicDepthBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8fd3ff);
+  scene.fog = new THREE.Fog(0x8fd3ff, 60, 340);
+
+  var camera = new THREE.PerspectiveCamera(
+    72, window.innerWidth / window.innerHeight, 0.1, 1000
+  );
+
+  window.addEventListener("resize", function () {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ---------------------------------------------------------
+   *  IŞIKLANDIRMA
+   * --------------------------------------------------------- */
+  var hemi = new THREE.HemisphereLight(0xf3f9ff, 0x6a7a55, 1.3);
+  scene.add(hemi);
+
+  var sun = new THREE.DirectionalLight(0xfff3d6, 1.3);
+  sun.position.set(120, 180, 60);
+  scene.add(sun);
+
+  var fill = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(fill);
+
+  /* ---------------------------------------------------------
+   *  ZEMİN (ÇİM)
+   * --------------------------------------------------------- */
+  var ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(1400, 1400),
+    new THREE.MeshStandardMaterial({ color: 0x4a9c4d, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.2;
+  scene.add(ground);
+
+  /* ---------------------------------------------------------
+   *  PİST EĞRİSİ: kapalı, çiçek-şeklinde bir döngü.
+   *  r(t) = R0 + RW * sin(FREQ * t)
+   * --------------------------------------------------------- */
+  var R0 = 150, RW = 26, FREQ = 3;
+  var SAMPLES = 720;
+  var ROAD_HALF_WIDTH = 6.5;
+
+  function trackRadius(t) {
+    return R0 + RW * Math.sin(FREQ * t);
+  }
+
+  // temel noktalar (SAMPLES adet, döngüsel)
+  var basePts = [];
+  for (var i = 0; i < SAMPLES; i++) {
+    var t = (i / SAMPLES) * Math.PI * 2;
+    var r = trackRadius(t);
+    basePts.push({ x: r * Math.cos(t), z: r * Math.sin(t) });
+  }
+
+  // SAMPLES+1 uzunluğunda nokta dizisi (son eleman = ilk eleman, döngüyü kapatmak için)
+  var points = basePts.concat([basePts[0]]);
+
+  // kümülatif mesafe tablosu
+  var cumDist = [0];
+  for (var i = 1; i <= SAMPLES; i++) {
+    var a = points[i - 1], b = points[i];
+    var d = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+    cumDist.push(cumDist[i - 1] + d);
+  }
+  var TOTAL_LENGTH = cumDist[SAMPLES];
+
+  // her nokta için teğet (komşu farkı ile), pürüzsüz normal için
+  var tangents = [];
+  for (var i = 0; i <= SAMPLES; i++) {
+    var prevI = (i - 1 + SAMPLES) % SAMPLES;
+    var nextI = (i + 1) % SAMPLES;
+    var p0 = basePts[prevI], p1 = basePts[nextI];
+    var tx = p1.x - p0.x, tz = p1.z - p0.z;
+    var len = Math.sqrt(tx * tx + tz * tz) || 1;
+    tangents.push({ x: tx / len, z: tz / len });
+  }
+
+  // mesafeye göre pist üzerinde konum + teğet bul (ikili arama)
+  function getTrackFrame(dist) {
+    dist = ((dist % TOTAL_LENGTH) + TOTAL_LENGTH) % TOTAL_LENGTH;
+    var lo = 0, hi = SAMPLES;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (cumDist[mid] < dist) lo = mid + 1; else hi = mid;
+    }
+    var i1 = Math.max(1, lo);
+    var i0 = i1 - 1;
+    var segLen = cumDist[i1] - cumDist[i0];
+    var localT = segLen > 0 ? (dist - cumDist[i0]) / segLen : 0;
+
+    var p0 = points[i0], p1 = points[i1];
+    var x = p0.x + (p1.x - p0.x) * localT;
+    var z = p0.z + (p1.z - p0.z) * localT;
+
+    var tg0 = tangents[i0], tg1 = tangents[i1];
+    var tx = tg0.x + (tg1.x - tg0.x) * localT;
+    var tz = tg0.z + (tg1.z - tg0.z) * localT;
+    var tlen = Math.sqrt(tx * tx + tz * tz) || 1;
+    tx /= tlen; tz /= tlen;
+
+    return { x: x, z: z, tx: tx, tz: tz };
+  }
+
+  /* ---------------------------------------------------------
+   *  YOL DOKUSU (asfalt + kesikli orta çizgi + kırmızı/beyaz bordür)
+   * --------------------------------------------------------- */
+  function buildRoadTexture() {
+    var w = 64, h = 256;
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+
+    ctx.fillStyle = "#84848c";
+    ctx.fillRect(0, 0, w, h);
+
+    // üst yarı: kırmızı bordür + kesikli orta çizgi
+    ctx.fillStyle = "#e0453f";
+    ctx.fillRect(0, 0, 9, h / 2);
+    ctx.fillRect(w - 9, 0, 9, h / 2);
+    ctx.fillStyle = "#f7f7f7";
+    ctx.fillRect(w / 2 - 4, 0, 8, h / 2);
+
+    // alt yarı: beyaz bordür, orta çizgi boşluğu
+    ctx.fillStyle = "#f7f7f7";
+    ctx.fillRect(0, h / 2, 9, h / 2);
+    ctx.fillRect(w - 9, h / 2, 9, h / 2);
+
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
+  var TILE_LENGTH = 8; // her doku karosu bu kadar dünya birimi kaplar
+  var roadTexture = buildRoadTexture();
+
+  function buildRoadMesh() {
+    var vertCount = (SAMPLES + 1) * 2;
+    var positions = new Float32Array(vertCount * 3);
+    var normals = new Float32Array(vertCount * 3);
+    var uvs = new Float32Array(vertCount * 2);
+
+    for (var i = 0; i <= SAMPLES; i++) {
+      var p = points[i];
+      var tg = tangents[i];
+      // yola dik birim vektör (XZ düzleminde 90 derece döndürülmüş teğet)
+      var nx = -tg.z, nz = tg.x;
+
+      var lx = p.x + nx * ROAD_HALF_WIDTH;
+      var lz = p.z + nz * ROAD_HALF_WIDTH;
+      var rx = p.x - nx * ROAD_HALF_WIDTH;
+      var rz = p.z - nz * ROAD_HALF_WIDTH;
+
+      var v = cumDist[i] / TILE_LENGTH;
+
+      var base = i * 2 * 3;
+      positions[base] = lx; positions[base + 1] = 0; positions[base + 2] = lz;
+      positions[base + 3] = rx; positions[base + 4] = 0; positions[base + 5] = rz;
+
+      var nbase = i * 2 * 3;
+      normals[nbase] = 0; normals[nbase + 1] = 1; normals[nbase + 2] = 0;
+      normals[nbase + 3] = 0; normals[nbase + 4] = 1; normals[nbase + 5] = 0;
+
+      var uvbase = i * 2 * 2;
+      uvs[uvbase] = 0; uvs[uvbase + 1] = v;
+      uvs[uvbase + 2] = 1; uvs[uvbase + 3] = v;
+    }
+
+    var indices = [];
+    for (var i = 0; i < SAMPLES; i++) {
+      var a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+      indices.push(a, b, c);
+      indices.push(b, d, c);
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+
+    var mat = new THREE.MeshStandardMaterial({
+      map: roadTexture,
+      side: THREE.DoubleSide,
+      roughness: 0.95,
+    });
+
+    return new THREE.Mesh(geo, mat);
+  }
+
+  var roadMesh = buildRoadMesh();
+  roadMesh.position.y = 0.05;
+  scene.add(roadMesh);
+
+  /* ---------------------------------------------------------
+   *  BAŞLANGIÇ / BİTİŞ KAPISI
+   * --------------------------------------------------------- */
+  (function buildStartGate() {
+    var start = getTrackFrame(0);
+    var nx = -start.tz, nz = start.tx;
+    var poleGeo = new THREE.CylinderGeometry(0.35, 0.35, 8, 8);
+    var poleMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
+    [1, -1].forEach(function (side) {
+      var pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(
+        start.x + nx * (ROAD_HALF_WIDTH + 1) * side,
+        4,
+        start.z + nz * (ROAD_HALF_WIDTH + 1) * side
+      );
+      scene.add(pole);
+    });
+
+    var bannerGeo = new THREE.BoxGeometry(ROAD_HALF_WIDTH * 2 + 3, 1.4, 0.2);
+    var bannerMat = new THREE.MeshStandardMaterial({ color: 0xf4c542 });
+    var banner = new THREE.Mesh(bannerGeo, bannerMat);
+    banner.position.set(start.x, 7.6, start.z);
+    banner.lookAt(start.x + start.tx, 7.6, start.z + start.tz);
+    scene.add(banner);
+  })();
+
+  /* ---------------------------------------------------------
+   *  DEKORATİF AĞAÇLAR
+   * --------------------------------------------------------- */
+  (function scatterTrees() {
+    var trunkGeo = new THREE.CylinderGeometry(0.25, 0.32, 2.2, 6);
+    var trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3a22 });
+    var foliageGeo = new THREE.ConeGeometry(1.6, 3.6, 7);
+    var foliageMat = new THREE.MeshStandardMaterial({ color: 0x2f7d3a });
+
+    var TREE_COUNT = 140;
+    for (var i = 0; i < TREE_COUNT; i++) {
+      var t = Math.random() * Math.PI * 2;
+      var r = trackRadius(t);
+      var px = r * Math.cos(t), pz = r * Math.sin(t);
+      var outLen = Math.sqrt(px * px + pz * pz) || 1;
+      var outX = px / outLen, outZ = pz / outLen;
+      var offset = ROAD_HALF_WIDTH + 9 + Math.random() * 26;
+
+      var group = new THREE.Group();
+      var trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 1.1;
+      var foliage = new THREE.Mesh(foliageGeo, foliageMat);
+      foliage.position.y = 3.0;
+      group.add(trunk, foliage);
+
+      var scale = 0.8 + Math.random() * 0.9;
+      group.scale.setScalar(scale);
+      group.position.set(px + outX * offset, 0, pz + outZ * offset);
+      group.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(group);
+    }
+  })();
+
+  /* ---------------------------------------------------------
+   *  KOKPİT (kaput + direksiyon) — kameraya bağlı
+   * --------------------------------------------------------- */
+  var wheel = new THREE.Group();
+  var wheelRim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.32, 0.045, 10, 24),
+    new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.6 })
+  );
+  var wheelSpoke = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.32, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0x111318 })
+  );
+  wheelSpoke.position.y = -0.14;
+  wheel.add(wheelRim, wheelSpoke);
+  wheel.position.set(0, -0.42, -0.75);
+  wheel.rotation.x = -0.35;
+  camera.add(wheel);
+
+  var hood = new THREE.Mesh(
+    new THREE.BoxGeometry(1.9, 0.28, 1.3),
+    new THREE.MeshStandardMaterial({ color: 0xb01818, roughness: 0.4, metalness: 0.3 })
+  );
+  hood.position.set(0, -0.95, -1.5);
+  camera.add(hood);
+
+  var dash = new THREE.Mesh(
+    new THREE.BoxGeometry(1.9, 0.18, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x1c1c22 })
+  );
+  dash.position.set(0, -0.66, -1.05);
+  camera.add(dash);
+
+  scene.add(camera);
+
+  /* ---------------------------------------------------------
+   *  FİZİK / KONTROL DURUMU
+   * --------------------------------------------------------- */
+  var MAX_SPEED = 46;        // birim/sn (~165 km/s tepe hız)
+  var ACCEL = 16;
+  var BRAKE_DECEL = 34;
+  var FRICTION = 7;
+  var SPEED_TO_KMH = 3.6;
+
+  var state = {
+    gas: false,
+    brake: false,
+    speed: 0,
+    distance: 0,
+    started: false,
+  };
+
+  var CAM_HEIGHT = 1.35;
+
+  var clock = new THREE.Clock();
+
+  function updatePhysics(dt) {
+    if (state.gas) {
+      state.speed += ACCEL * dt;
+    } else if (state.speed > 0) {
+      state.speed -= FRICTION * dt;
+    }
+    if (state.brake) {
+      state.speed -= BRAKE_DECEL * dt;
+    }
+    state.speed = Math.max(0, Math.min(MAX_SPEED, state.speed));
+    state.distance += state.speed * dt;
+  }
+
+  var lastLap = 1;
+
+  function updateCamera() {
+    var frame = getTrackFrame(state.distance);
+    camera.position.set(frame.x, CAM_HEIGHT, frame.z);
+    var lookX = frame.x + frame.tx * 10;
+    var lookZ = frame.z + frame.tz * 10;
+    camera.up.set(0, 1, 0);
+    camera.lookAt(lookX, CAM_HEIGHT, lookZ);
+
+    // hafif viraj yatışı (bank) hissi için yaklaşık eğrilik hesabı
+    var ahead = getTrackFrame(state.distance + 4);
+    var cross = frame.tx * ahead.tz - frame.tz * ahead.tx;
+    var bank = THREE.MathUtils.clamp(cross * 10, -0.18, 0.18);
+    camera.rotateZ(bank);
+
+    wheel.rotation.z = -bank * 2.2;
+  }
+
+  /* ---------------------------------------------------------
+   *  HUD
+   * --------------------------------------------------------- */
+  var speedValueEl = document.getElementById("speedValue");
+  var speedBarFillEl = document.getElementById("speedBarFill");
+  var lapValueEl = document.getElementById("lapValue");
+  var startHintEl = document.getElementById("startHint");
+
+  function updateHud() {
+    var kmh = Math.round(state.speed * SPEED_TO_KMH);
+    speedValueEl.textContent = kmh;
+    speedBarFillEl.style.width = Math.min(100, (state.speed / MAX_SPEED) * 100) + "%";
+
+    var lap = Math.floor(state.distance / TOTAL_LENGTH) + 1;
+    if (lap !== lastLap) lastLap = lap;
+    lapValueEl.textContent = lap;
+
+    if (!state.started && state.speed > 0.05) {
+      state.started = true;
+      startHintEl.style.opacity = "0";
+      setTimeout(function () { startHintEl.style.display = "none"; }, 450);
+    }
+  }
+
+  /* ---------------------------------------------------------
+   *  BASİT MOTOR SESİ (Web Audio) — ilk gaz basışında başlar
+   * --------------------------------------------------------- */
+  var audioCtx = null, engineOsc = null, engineGain = null;
+  function ensureEngineSound() {
+    if (audioCtx) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+      engineOsc = audioCtx.createOscillator();
+      engineGain = audioCtx.createGain();
+      engineOsc.type = "sawtooth";
+      engineOsc.frequency.value = 60;
+      engineGain.gain.value = 0.0;
+      engineOsc.connect(engineGain);
+      engineGain.connect(audioCtx.destination);
+      engineOsc.start();
+    } catch (e) { /* ses desteklenmiyorsa sessizce yok say */ }
+  }
+  function updateEngineSound() {
+    if (!audioCtx || !engineOsc) return;
+    var ratio = state.speed / MAX_SPEED;
+    engineOsc.frequency.setTargetAtTime(60 + ratio * 260, audioCtx.currentTime, 0.05);
+    engineGain.gain.setTargetAtTime(0.015 + ratio * 0.05, audioCtx.currentTime, 0.05);
+  }
+
+  /* ---------------------------------------------------------
+   *  GİRİŞ KONTROLLERİ: fare, dokunma ve klavye
+   * --------------------------------------------------------- */
+  function bindPedal(el, onDown, onUp) {
+    el.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      el.classList.add("active");
+      onDown();
+      if (el.setPointerCapture) {
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
+    ["pointerup", "pointercancel", "pointerleave", "pointerout"].forEach(function (evt) {
+      el.addEventListener(evt, function () {
+        el.classList.remove("active");
+        onUp();
+      });
+    });
+    el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  }
+
+  var gasBtn = document.getElementById("gasBtn");
+  var brakeBtn = document.getElementById("brakeBtn");
+
+  bindPedal(gasBtn, function () {
+    state.gas = true;
+    ensureEngineSound();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }, function () { state.gas = false; });
+
+  bindPedal(brakeBtn, function () { state.brake = true; }, function () { state.brake = false; });
+
+  window.addEventListener("keydown", function (e) {
+    if (e.repeat) return;
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+      state.gas = true;
+      gasBtn.classList.add("active");
+      ensureEngineSound();
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      e.preventDefault();
+    } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+      state.brake = true;
+      brakeBtn.classList.add("active");
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+      state.gas = false;
+      gasBtn.classList.remove("active");
+    } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+      state.brake = false;
+      brakeBtn.classList.remove("active");
+    }
+  });
+
+  /* ---------------------------------------------------------
+   *  OYUN DÖNGÜSÜ
+   * --------------------------------------------------------- */
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    updatePhysics(dt);
+    updateCamera();
+    updateHud();
+    updateEngineSound();
+    renderer.render(scene, camera);
+  }
+
+  // başlangıç kamera konumu (durağan, gaz basılmadan önce)
+  updateCamera();
+  updateHud();
+  animate();
+})();
+</script>
+</body>
+</html>
