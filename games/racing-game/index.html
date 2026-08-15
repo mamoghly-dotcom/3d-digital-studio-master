@@ -1141,6 +1141,8 @@
   var STEER_RESPONSE = 5;
   var HANDBRAKE_GRIP_MULT = 0.12;
   var FINISH_LAPS = 2;
+  var REVERSE_ACCEL = 12;
+  var REVERSE_MAX_RATIO = 0.35;
   var CAM_HEIGHT = 1.35;
 
   var state = null, car = null, mode = "menu", bots = null, playerCarMesh = null, viewMode = "cockpit";
@@ -1180,11 +1182,16 @@
 
     if (state.gas) state.speed += car.accel * dt;
     else if (state.speed > 0) state.speed -= FRICTION * dt;
-    if (state.brake) state.speed -= (handbrake ? BRAKE_DECEL * 0.15 : BRAKE_DECEL) * dt;
-    state.speed = Math.max(0, Math.min(car.maxSpeed, state.speed));
+    else if (state.speed < 0) state.speed += FRICTION * dt;
 
-    if (state.speed > 0.05) {
-      var speedRatio = Math.min(1, state.speed / car.maxSpeed);
+    if (state.brake) {
+      if (state.speed > 0) state.speed -= (handbrake ? BRAKE_DECEL * 0.15 : BRAKE_DECEL) * dt;
+      else state.speed -= REVERSE_ACCEL * dt; // durunca FREN geri vitese geçer
+    }
+    state.speed = Math.max(-car.maxSpeed * REVERSE_MAX_RATIO, Math.min(car.maxSpeed, state.speed));
+
+    if (Math.abs(state.speed) > 0.05) {
+      var speedRatio = Math.min(1, Math.abs(state.speed) / car.maxSpeed);
       var turnRate = -state.steerAngle * car.turnRate * (0.25 + 0.75 * speedRatio);
       state.heading += turnRate * dt;
     }
@@ -1361,8 +1368,8 @@
 
   function updateHud() {
     var kmh = Math.round(state.speed * SPEED_TO_KMH);
-    speedValueEl.textContent = kmh;
-    speedBarFillEl.style.width = Math.min(100, (state.speed / car.maxSpeed) * 100) + "%";
+    speedValueEl.textContent = kmh < 0 ? "R" + Math.abs(kmh) : kmh;
+    speedBarFillEl.style.width = Math.max(0, Math.min(100, (Math.abs(state.speed) / car.maxSpeed) * 100)) + "%";
 
     if (state.mapId === "loop") {
       lapPanelEl.firstChild.textContent = "TUR ";
