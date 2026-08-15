@@ -789,28 +789,33 @@
 
     var offX = W / 2 + 0.03;
     var offZ = L - 0.62;
+    var frontWheelGroups = [];
     [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(function (p) {
       var wx = p[0] * offX, wz = p[1] * offZ;
+
+      // her tekerlek kendi grubunda: direksiyon dönüşü (Y) grubu, yuvarlanma (X) içindeki parçaları döndürür
+      var wheelGroup = new THREE.Group();
+      wheelGroup.position.set(wx, wheelBaseY, wz);
+      wheelGroup.userData.isWheel = true;
+      g.add(wheelGroup);
+
       var wheel = new THREE.Mesh(wheelGeo, tireMat);
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(wx, wheelBaseY, wz);
-      wheel.userData.isWheel = true;
-      g.add(wheel);
+      wheelGroup.add(wheel);
 
       var hub = new THREE.Mesh(hubGeo, hubMat);
       hub.rotation.z = Math.PI / 2;
-      hub.position.set(wx, wheelBaseY, wz);
-      hub.userData.isWheel = true;
-      g.add(hub);
+      wheelGroup.add(hub);
 
       for (var s = 0; s < 5; s++) {
         var spoke = new THREE.Mesh(spokeGeo, hubMat);
-        spoke.position.set(wx, wheelBaseY, wz);
         spoke.rotation.x = (s / 5) * Math.PI * 2;
-        spoke.userData.isWheel = true;
-        g.add(spoke);
+        wheelGroup.add(spoke);
       }
+
+      if (p[1] === 1) frontWheelGroups.push(wheelGroup);
     });
+    g.userData.frontWheelGroups = frontWheelGroups;
 
     return g;
   }
@@ -938,7 +943,7 @@
   });
 
   var scene, wheel, hood, dash, buildingBoxes, START, TOTAL_LENGTH, getTrackFrame, getNearestProgress, getTrackLateralDist, LOOP_HALF_WIDTH, CITY_LINES;
-  var CAR_RADIUS = 1.1;
+  var CAR_RADIUS = 1.3;
 
   function buildRoadTexture() {
     var w = 128, h = 256;
@@ -1364,7 +1369,7 @@
   function isBlocked(x, z) {
     if (collidesBuildings(x, z)) return true;
     if (state.mapId === "loop" && getTrackLateralDist) {
-      if (getTrackLateralDist(x, z) > LOOP_HALF_WIDTH - 0.5) return true;
+      if (getTrackLateralDist(x, z) > LOOP_HALF_WIDTH - CAR_RADIUS - 0.3) return true;
     }
     return false;
   }
@@ -1481,6 +1486,10 @@
     if (playerCarMesh) {
       playerCarMesh.position.set(state.posX, 0, state.posZ);
       playerCarMesh.rotation.y = state.heading;
+      if (playerCarMesh.userData.frontWheelGroups) {
+        var wheelTurn = state.steerAngle * 0.5;
+        playerCarMesh.userData.frontWheelGroups.forEach(function (wg) { wg.rotation.y = wheelTurn; });
+      }
     }
 
     if (viewMode === "chase") {
